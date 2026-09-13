@@ -185,7 +185,7 @@ create policy "anyone can upload photos for a real event"
     bucket_id = 'photos'
     and exists (
       select 1 from public.events e
-      where e.id::text = (storage.foldername(name))[1]
+      where e.id::text = (storage.foldername(storage.objects.name))[1]
     )
   );
 
