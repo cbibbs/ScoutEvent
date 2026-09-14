@@ -24,6 +24,7 @@ export default async function SlideshowPage({
     .select("*")
     .eq("event_id", event.id)
     .eq("status", "approved")
+    .eq("in_slideshow", true)
     .order("created_at", { ascending: true })
     .returns<Photo[]>();
 

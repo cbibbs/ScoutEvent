@@ -25,6 +25,7 @@ export type Photo = {
   storage_path: string;
   uploader_name: string | null;
   status: PhotoStatus;
+  in_slideshow: boolean;
   width: number | null;
   height: number | null;
   created_at: string;

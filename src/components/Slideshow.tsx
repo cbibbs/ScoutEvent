@@ -53,7 +53,7 @@ export function Slideshow({
 
           setPhotos((prev) => {
             const withoutThis = prev.filter((p) => p.id !== row.id);
-            return row.status === "approved"
+            return row.status === "approved" && row.in_slideshow
               ? [...withoutThis, row]
               : withoutThis;
           });
@@ -75,6 +75,7 @@ export function Slideshow({
         .select("*")
         .eq("event_id", eventId)
         .eq("status", "approved")
+        .eq("in_slideshow", true)
         .order("created_at", { ascending: true })
         .returns<Photo[]>();
       if (data) setPhotos(data);

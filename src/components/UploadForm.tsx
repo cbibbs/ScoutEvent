@@ -10,6 +10,7 @@ type FileStatus = "compressing" | "uploading" | "done" | "error";
 
 interface QueuedFile {
   id: string;
+  file: File;
   name: string;
   status: FileStatus;
   error?: string;
@@ -26,10 +27,7 @@ export function UploadForm({ eventId }: { eventId: string }) {
     );
   }
 
-  async function uploadOne(file: File) {
-    const id = crypto.randomUUID();
-    setQueue((prev) => [...prev, { id, name: file.name, status: "compressing" }]);
-
+  async function processFile(id: string, file: File) {
     if (!file.type.startsWith("image/")) {
       updateFile(id, { status: "error", error: "Not an image file" });
       return;
@@ -43,9 +41,13 @@ export function UploadForm({ eventId }: { eventId: string }) {
     }
 
     try {
+      updateFile(id, { status: "compressing", error: undefined });
+
+      // Favor upload speed over maximum fidelity: a venue network is
+      // often slow/congested, and 1600px is still sharp filling a TV.
       const compressed = await imageCompression(file, {
-        maxSizeMB: 1,
-        maxWidthOrHeight: 1920,
+        maxSizeMB: 0.6,
+        maxWidthOrHeight: 1600,
         useWebWorker: true,
         fileType: "image/jpeg",
       });
@@ -91,21 +93,22 @@ export function UploadForm({ eventId }: { eventId: string }) {
 
   function handleFiles(fileList: FileList | null) {
     if (!fileList) return;
-    Array.from(fileList).forEach((file) => void uploadOne(file));
+    Array.from(fileList).forEach((file) => {
+      const id = crypto.randomUUID();
+      setQueue((prev) => [
+        ...prev,
+        { id, file, name: file.name, status: "compressing" },
+      ]);
+      void processFile(id, file);
+    });
+  }
+
+  function retry(f: QueuedFile) {
+    void processFile(f.id, f.file);
   }
 
   return (
     <div className="flex w-full flex-col gap-4">
-      <label className="flex flex-col gap-1">
-        <span className="text-sm font-medium">Your name (optional)</span>
-        <input
-          value={uploaderName}
-          onChange={(e) => setUploaderName(e.target.value)}
-          placeholder="e.g. Alex"
-          className="rounded-md border border-gray-300 px-3 py-2 dark:border-gray-700 dark:bg-gray-900"
-        />
-      </label>
-
       <label className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-md border-2 border-dashed border-gray-300 px-4 py-10 text-center hover:border-blue-400 dark:border-gray-700">
         <span className="font-medium">Tap to add photos</span>
         <span className="text-xs text-gray-500">
@@ -126,27 +129,48 @@ export function UploadForm({ eventId }: { eventId: string }) {
           {queue.map((f) => (
             <li
               key={f.id}
-              className="flex items-center justify-between rounded-md border border-gray-200 px-3 py-2 text-sm dark:border-gray-800"
+              className="flex items-center justify-between gap-2 rounded-md border border-gray-200 px-3 py-2 text-sm dark:border-gray-800"
             >
               <span className="truncate">{f.name}</span>
-              <span
-                className={
-                  f.status === "done"
-                    ? "text-green-600"
-                    : f.status === "error"
-                      ? "text-red-600"
-                      : "text-gray-500"
-                }
-              >
-                {f.status === "compressing" && "Preparing…"}
-                {f.status === "uploading" && "Uploading…"}
-                {f.status === "done" && "Uploaded ✓"}
-                {f.status === "error" && (f.error ?? "Failed")}
+              <span className="flex shrink-0 items-center gap-2">
+                <span
+                  className={
+                    f.status === "done"
+                      ? "text-green-600"
+                      : f.status === "error"
+                        ? "text-red-600"
+                        : "text-gray-500"
+                  }
+                >
+                  {f.status === "compressing" && "Preparing…"}
+                  {f.status === "uploading" && "Uploading…"}
+                  {f.status === "done" && "Uploaded ✓"}
+                  {f.status === "error" && (f.error ?? "Failed")}
+                </span>
+                {f.status === "error" && (
+                  <button
+                    type="button"
+                    onClick={() => retry(f)}
+                    className="rounded border border-gray-300 px-2 py-0.5 text-xs hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-900"
+                  >
+                    Retry
+                  </button>
+                )}
               </span>
             </li>
           ))}
         </ul>
       )}
+
+      <label className="flex flex-col gap-1">
+        <span className="text-sm font-medium">Your name (optional)</span>
+        <input
+          value={uploaderName}
+          onChange={(e) => setUploaderName(e.target.value)}
+          placeholder="e.g. Alex"
+          className="rounded-md border border-gray-300 px-3 py-2 dark:border-gray-700 dark:bg-gray-900"
+        />
+      </label>
     </div>
   );
 }
