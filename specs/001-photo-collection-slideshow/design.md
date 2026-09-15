@@ -124,7 +124,11 @@ Supabase client:
 1. Guest opens `/e/[slug]`. Page fetches the event by slug (name,
    upload window, moderation flag not needed client-side beyond display).
 2. Guest picks/captures photo(s) via `<input type="file" accept="image/*"
-   capture multiple>`.
+   multiple>`. Deliberately **no** `capture` attribute: that forces the
+   camera open directly and skips the OS picker's gallery option, which
+   guests need just as much as the camera — they may already have the
+   photo taken. Leaving `capture` off still offers the camera as one of
+   the native picker's choices on mobile.
 3. For each file: validate type (`image/*`) and size (≤ 15MB pre-compression,
    configurable constant); reject with inline error if invalid, continue
    with the rest.
