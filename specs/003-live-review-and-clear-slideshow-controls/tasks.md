@@ -11,6 +11,8 @@
       "Remove from slideshow" / "Add back to slideshow" button, styled
       and positioned distinctly from Reject/Delete (design §2). Verified
       the label flips correctly on click.
-- [ ] T3 Build/lint clean (done); redeploy to production and spot-check
-      there, where realtime isn't blocked — pending a fresh Vercel
-      token.
+- [x] T3 Build/lint clean; redeployed to production
+      (https://scoutevent.vercel.app). Real-device spot-check of the
+      realtime push (vs. the poll fallback verified locally) is up to
+      the organizer at the next event, since it needs two devices and
+      isn't practical to script here.
