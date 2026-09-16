@@ -51,10 +51,8 @@ export default async function ManageEventPage({
       </section>
 
       <section>
-        <h2 className="mb-4 text-lg font-medium">
-          Photos ({photos?.length ?? 0})
-        </h2>
-        <PhotoManagementGrid initialPhotos={photos ?? []} />
+        <h2 className="mb-4 text-lg font-medium">Photos</h2>
+        <PhotoManagementGrid eventId={event.id} initialPhotos={photos ?? []} />
       </section>
     </div>
   );

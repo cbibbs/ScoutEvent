@@ -1,8 +1,10 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { Photo, PhotoStatus } from "@/lib/supabase/types";
+
+const POLL_FALLBACK_MS = 30_000;
 
 const STATUS_STYLES: Record<PhotoStatus, string> = {
   pending: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300",
@@ -11,8 +13,10 @@ const STATUS_STYLES: Record<PhotoStatus, string> = {
 };
 
 export function PhotoManagementGrid({
+  eventId,
   initialPhotos,
 }: {
+  eventId: string;
   initialPhotos: Photo[];
 }) {
   const [photos, setPhotos] = useState(initialPhotos);
@@ -23,6 +27,61 @@ export function PhotoManagementGrid({
     return supabase.storage.from("photos").getPublicUrl(storagePath).data
       .publicUrl;
   }
+
+  async function refetchAll() {
+    const { data } = await supabase
+      .from("photos")
+      .select("*")
+      .eq("event_id", eventId)
+      .order("created_at", { ascending: false })
+      .returns<Photo[]>();
+    if (data) setPhotos(data);
+  }
+
+  // New uploads and status/slideshow changes (this tab, another tab, or
+  // another organizer session) show up without a reload (US-10). Section
+  // membership below is derived from `photos` state, so an upsert here is
+  // enough to move a card between "Needs review" and "Library".
+  useEffect(() => {
+    const channel = supabase
+      .channel(`manage-photos-${eventId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "photos",
+          filter: `event_id=eq.${eventId}`,
+        },
+        (payload) => {
+          if (payload.eventType === "DELETE") {
+            const deletedId = (payload.old as Partial<Photo>)?.id;
+            if (deletedId) {
+              setPhotos((prev) => prev.filter((p) => p.id !== deletedId));
+            }
+            return;
+          }
+          const row = payload.new as Photo;
+          setPhotos((prev) => {
+            const withoutThis = prev.filter((p) => p.id !== row.id);
+            return [row, ...withoutThis];
+          });
+        },
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [eventId, supabase]);
+
+  // Self-healing poll in case the realtime subscription drops on a
+  // dashboard tab left open for a while (same rationale as the slideshow).
+  useEffect(() => {
+    const id = setInterval(refetchAll, POLL_FALLBACK_MS);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [eventId, supabase]);
 
   async function updatePhoto(photo: Photo, patch: Partial<Photo>) {
     setBusyId(photo.id);
@@ -42,6 +101,9 @@ export function PhotoManagementGrid({
   // common case is "this is fine, show it" (design.md §2).
   const approve = (photo: Photo) =>
     updatePhoto(photo, { status: "approved", in_slideshow: true });
+  // Reject is a moderation decision only — it happens to also pull the
+  // photo from the slideshow, but it is never the *tool* for ordinary
+  // slideshow curation (specs/003 US-11). Use the toggle button for that.
   const reject = (photo: Photo) =>
     updatePhoto(photo, { status: "rejected", in_slideshow: false });
   const restore = (photo: Photo) => updatePhoto(photo, { status: "approved" });
@@ -157,18 +219,18 @@ export function PhotoManagementGrid({
                       {photo.uploader_name}
                     </span>
                   )}
-                  {photo.status === "approved" && (
-                    <label className="flex items-center gap-2 text-xs">
-                      <input
-                        type="checkbox"
-                        checked={photo.in_slideshow}
-                        disabled={busyId === photo.id}
-                        onChange={() => toggleSlideshow(photo)}
-                      />
-                      In slideshow
-                    </label>
-                  )}
                   <div className="flex flex-wrap gap-1">
+                    {photo.status === "approved" && (
+                      <button
+                        disabled={busyId === photo.id}
+                        onClick={() => toggleSlideshow(photo)}
+                        className="rounded bg-blue-600 px-2 py-1 text-xs text-white hover:bg-blue-700 disabled:opacity-50"
+                      >
+                        {photo.in_slideshow
+                          ? "Remove from slideshow"
+                          : "Add back to slideshow"}
+                      </button>
+                    )}
                     {photo.status === "rejected" && (
                       <button
                         disabled={busyId === photo.id}
