@@ -1,43 +1,54 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { createClient } from "@/lib/supabase/client";
 import { computeUploadsOpen } from "@/lib/uploadWindow";
-import type { Photo } from "@/lib/supabase/types";
+import type { Event, Photo } from "@/lib/supabase/types";
 
 const POLL_FALLBACK_MS = 30_000;
 
 // The QR card scales with the display rather than staying a fixed pixel
-// box (design.md §3) — a 4K screen would otherwise render it half the
-// physical size of a 1080p one. Shared between the card and the
-// uploader-name caption so the caption's reserved padding can never
-// drift out of sync with the card it's protecting (design.md §3, T3.4).
-const QR_CARD_WIDTH = "clamp(140px, 14vw, 256px)";
+// box (design.md §3). A vw/px clamp() looked like it scaled but actually
+// capped at an identical fixed size for every display at or above
+// ~1600px wide — 1080p, 1440p and 4K all landed on the same 256px box.
+// Sizing against vmin with only a floor, no ceiling, avoids that trap:
+// it keeps growing on genuinely larger panels instead of plateauing.
+// Shared with the uploader-name caption's reserved padding so the two
+// can never drift out of sync (design.md §3, T3.4).
+const QR_CARD_WIDTH = "max(140px, 23vmin)";
 const QR_CARD_MARGIN = "clamp(1.5rem, 3vw, 3rem)";
-// The card's padding *is* the QR's quiet zone (design.md §3) — scaled
-// with the same clamp() family as the card itself so it stays a
-// consistent proportion of the code rather than shrinking relative to it
-// on a large display.
-const QR_CARD_PADDING = "clamp(0.875rem, 1.4vw, 1.5rem)";
+// The quiet zone the QR needs on every side — the card's outer padding
+// *and* the gap between the code and the caption below it both have to
+// clear 4 QR modules, or the card frame / caption text intrude on the
+// quiet zone exactly as a busy photo would (design.md §3). Tied to the
+// same vmin basis as the card width so the ratio holds at any display
+// size rather than being hand-tuned per breakpoint.
+const QR_QUIET_ZONE = "max(18px, 2.9vmin)";
+// The caption has to be legible from the distance the code is scannable
+// from — a fixed 12-13px reads fine on a laptop and disappears on a 55"
+// panel viewed from a few steps back (design.md §3).
+const QR_CAPTION_SIZE = "max(13px, 1.7vmin)";
+
+type UploadWindow = Pick<Event, "upload_starts_at" | "upload_ends_at">;
 
 export function Slideshow({
   eventId,
   eventName,
   intervalSeconds,
   initialPhotos,
-  slug,
-  uploadStartsAt,
-  uploadEndsAt,
+  guestUploadUrl,
+  initialUploadStartsAt,
+  initialUploadEndsAt,
   initialUploadsOpen,
 }: {
   eventId: string;
   eventName: string;
   intervalSeconds: number;
   initialPhotos: Photo[];
-  slug: string;
-  uploadStartsAt: string | null;
-  uploadEndsAt: string | null;
+  guestUploadUrl: string;
+  initialUploadStartsAt: string | null;
+  initialUploadEndsAt: string | null;
   initialUploadsOpen: boolean;
 }) {
   const supabase = useMemo(() => createClient(), []);
@@ -48,12 +59,17 @@ export function Slideshow({
   const [tick, setTick] = useState(0);
   const [uploadsOpen, setUploadsOpen] = useState(initialUploadsOpen);
 
-  // Mirrors the ShareLinks pattern: window.location.origin doesn't exist
-  // during SSR, so compute it lazily on the client to avoid a hydration
-  // mismatch, and render no QR until it's known (design.md §1).
-  const [origin] = useState(() =>
-    typeof window !== "undefined" ? window.location.origin : "",
-  );
+  // The upload window isn't fixed for the life of the page — an
+  // organizer can shorten upload_ends_at mid-show from the event
+  // settings form (design.md §2). The 30s poll below refreshes this ref
+  // so the auto-advance interval's own re-check always gates against the
+  // latest known window rather than what page load saw. A ref (not
+  // state) because it only needs to be read from inside interval
+  // callbacks, not to trigger a render on its own.
+  const uploadWindowRef = useRef<UploadWindow>({
+    upload_starts_at: initialUploadStartsAt,
+    upload_ends_at: initialUploadEndsAt,
+  });
 
   // Realtime: append newly-approved photos, drop ones no longer approved
   // (design.md §6).
@@ -98,53 +114,85 @@ export function Slideshow({
   }, [eventId, supabase]);
 
   // Self-healing poll in case the realtime subscription silently drops on
-  // a screen left running for hours (design.md §6).
+  // a screen left running for hours (design.md §6). Also re-reads the
+  // event's upload window alongside the photos, so an organizer
+  // shortening upload_ends_at mid-show takes effect here within one poll
+  // — the fixed-cutoff case below is immediate, but a live edit to the
+  // window itself can only be observed by asking the database again
+  // (design.md §2).
   useEffect(() => {
     const id = setInterval(async () => {
-      const { data } = await supabase
-        .from("photos")
-        .select("*")
-        .eq("event_id", eventId)
-        .eq("status", "approved")
-        .eq("in_slideshow", true)
-        .order("created_at", { ascending: true })
-        .returns<Photo[]>();
-      if (data) setPhotos(data);
+      const [{ data: freshPhotos }, { data: freshEvent }] = await Promise.all(
+        [
+          supabase
+            .from("photos")
+            .select("*")
+            .eq("event_id", eventId)
+            .eq("status", "approved")
+            .eq("in_slideshow", true)
+            .order("created_at", { ascending: true })
+            .returns<Photo[]>(),
+          supabase
+            .from("events")
+            .select("upload_starts_at, upload_ends_at")
+            .eq("id", eventId)
+            .maybeSingle<UploadWindow>(),
+        ],
+      );
+      if (freshPhotos) setPhotos(freshPhotos);
+      if (freshEvent) {
+        uploadWindowRef.current = freshEvent;
+        setUploadsOpen(
+          computeUploadsOpen(
+            freshEvent.upload_starts_at,
+            freshEvent.upload_ends_at,
+          ),
+        );
+      }
     }, POLL_FALLBACK_MS);
     return () => clearInterval(id);
   }, [eventId, supabase]);
 
   // Auto-advance. Also re-evaluates "are uploads open" on every tick
   // rather than on a second timer, so a slideshow left running for hours
-  // stops advertising the QR within one slide of upload_ends_at without
-  // anyone reloading the screen (design.md §2). Date.now() stays out of
-  // the render body and setUploadsOpen stays out of an effect body by
+  // stops advertising the QR within one slide of the cutoff without
+  // anyone reloading the screen (design.md §2). Reads uploadWindowRef
+  // (kept fresh by the poll above) rather than closing over the initial
+  // props, so this reflects a mid-show edit to upload_ends_at too, not
+  // only time passing a value frozen at page load. Date.now() stays out
+  // of the render body and setUploadsOpen stays out of an effect body by
   // living inside this interval callback instead.
   useEffect(() => {
     const ms = Math.max(2, intervalSeconds) * 1000;
     const id = setInterval(() => {
       setTick((t) => t + 1);
-      setUploadsOpen(computeUploadsOpen(uploadStartsAt, uploadEndsAt));
+      setUploadsOpen(
+        computeUploadsOpen(
+          uploadWindowRef.current.upload_starts_at,
+          uploadWindowRef.current.upload_ends_at,
+        ),
+      );
     }, ms);
     return () => clearInterval(id);
-  }, [intervalSeconds, uploadStartsAt, uploadEndsAt]);
+  }, [intervalSeconds]);
 
   const current = photos.length > 0 ? photos[tick % photos.length] : undefined;
 
-  // The encoded value is constant for the life of the page (origin and
-  // slug never change), so hoist the QR element itself rather than
-  // rebuilding it every tick (design.md §4, T3.5).
-  const guestUrl = origin ? `${origin}/e/${slug}` : "";
+  // The encoded value is constant for the life of the page — resolved
+  // server-side from the request (design.md §1), not
+  // window.location.origin, so there's no client/server divergence to
+  // hydrate through and no "origin unknown yet" state to gate on. Still
+  // memoized so the component re-rendering on every tick doesn't rebuild
+  // the QR's SVG on every slide advance (design.md §4, T3.5).
   const qrCode = useMemo(
-    () =>
-      guestUrl ? (
-        <QRCodeSVG
-          value={guestUrl}
-          size={256}
-          style={{ width: "100%", height: "100%" }}
-        />
-      ) : null,
-    [guestUrl],
+    () => (
+      <QRCodeSVG
+        value={guestUploadUrl}
+        size={256}
+        style={{ width: "100%", height: "100%" }}
+      />
+    ),
+    [guestUploadUrl],
   );
 
   return (
@@ -176,7 +224,7 @@ export function Slideshow({
           // Only reserved while the card is actually showing, so the
           // caption re-centers once uploads close.
           style={
-            uploadsOpen && qrCode
+            uploadsOpen
               ? { paddingRight: `calc(${QR_CARD_WIDTH} + ${QR_CARD_MARGIN})` }
               : undefined
           }
@@ -184,22 +232,28 @@ export function Slideshow({
           {current.uploader_name}
         </p>
       )}
-      {uploadsOpen && qrCode && (
+      {uploadsOpen && (
         // Opaque light card so the QR is legible over any photo — a code
-        // drawn straight onto a dark or busy image won't scan. The card's
-        // own padding is the quiet zone; never let the photo provide it
+        // drawn straight onto a dark or busy image won't scan. The
+        // card's padding *and* the gap to the caption below the code
+        // both have to clear the QR's 4-module quiet zone, so both reuse
+        // QR_QUIET_ZONE rather than an arbitrary smaller gap
         // (design.md §3, T3.1-T3.3).
         <div
-          className="absolute flex flex-col items-center gap-2 rounded-xl bg-surface-raised shadow-lg"
+          className="absolute flex flex-col items-center rounded-xl bg-surface-raised shadow-lg"
           style={{
             right: QR_CARD_MARGIN,
             bottom: QR_CARD_MARGIN,
             width: QR_CARD_WIDTH,
-            padding: QR_CARD_PADDING,
+            padding: QR_QUIET_ZONE,
+            gap: QR_QUIET_ZONE,
           }}
         >
           <div className="aspect-square w-full">{qrCode}</div>
-          <p className="text-center text-xs leading-snug font-semibold text-ink-soft">
+          <p
+            className="text-center leading-snug font-semibold text-ink-soft"
+            style={{ fontSize: QR_CAPTION_SIZE }}
+          >
             Scan to add your photos
           </p>
         </div>
