@@ -118,23 +118,32 @@ this feature removes. Revised behavior:
   list. If the row now matches a *different* section it wasn't loaded in
   (e.g. approved from Needs Review — now belongs in Slideshow; or added
   to the slideshow from Library), do **not** insert it into that other
-  section's already-loaded page — same reasoning as INSERT below. Just
-  bump that section's count; the organizer reaches it by paging or
-  reopening that section.
+  section's already-loaded page — same reasoning as INSERT below. The
+  organizer reaches it by paging or reopening that section; its count is
+  corrected by the count refresh below.
 - **INSERT**: do **not** append to an already-loaded page — Needs
   Review's oldest-first order means a new upload belongs at the end of
   the full set, not the page currently in view, so silently inserting it
-  would misrepresent pagination bounds. Instead, bump the live pending
-  count (badge, header stat) from the payload alone, no extra query. The
-  organizer reaches new photos by paging forward, same as any other
-  queue.
+  would misrepresent pagination bounds. The organizer reaches new photos
+  by paging forward, same as any other queue; the badge/header count
+  updates via the count refresh below.
 - **DELETE**: remove by id from any loaded page, as today.
-- **Poll fallback**: replace the full re-fetch with a lightweight
-  `count`-only query (`select("id", { count: "exact", head: true })`)
-  per section (Needs Review, Slideshow, Library), so a dropped realtime
-  connection still self-heals the *counts* without re-pulling every row;
-  a stale loaded page resolves itself next time the organizer pages or
-  refreshes.
+- **Counts are read from the server, never derived from payloads.**
+  Every handler above must be safe to apply twice for the same row,
+  because the organizer's own change arrives twice: once as the local
+  optimistic update, then again as Supabase's realtime echo of that same
+  UPDATE. Patching or removing a *loaded* row is naturally idempotent
+  (the second pass finds nothing to do), but incrementing a count for a
+  row that isn't loaded is not — it would count the same photo twice and
+  leave the header stat visibly wrong until the next poll. So any change
+  instead schedules a short debounced (~800ms) authoritative count query
+  per section — the same `select("id", { count: "exact", head: true })`
+  the poll runs, just triggered by the change. Debounced so a burst of
+  uploads or one bulk action collapses into a single refresh.
+- **Poll fallback**: the same count queries on a 30s timer, replacing
+  Feature 003's full re-fetch, so a dropped realtime connection still
+  self-heals the *counts* without re-pulling every row; a stale loaded
+  page resolves itself next time the organizer pages or refreshes.
 
 ## 4. "Review one at a time"
 

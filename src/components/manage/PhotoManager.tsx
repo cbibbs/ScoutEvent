@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import type { Photo } from "@/lib/supabase/types";
 import {
+  COUNT_REFRESH_DEBOUNCE_MS,
   LIBRARY_PAGE_SIZE,
   NEEDS_REVIEW_PAGE_SIZE,
   POLL_FALLBACK_MS,
@@ -97,19 +98,89 @@ export function PhotoManager({
     return new Set([...librarySelectedRaw].filter((id) => ids.has(id)));
   }, [librarySelectedRaw, library.items]);
 
-  function reconcileAfterPatch(rows: Photo[]) {
-    setNeedsReview((prev) => reconcileSection(prev, rows, matchesNeedsReview));
-    setSlideshow((prev) => reconcileSection(prev, rows, matchesSlideshow));
-    setLibrary((prev) =>
-      reconcileSection(prev, rows, (p) => matchesLibrary(p, filtersRef.current)),
-    );
-  }
+  // Section counts come from the server, not from local arithmetic: a
+  // change reaches us twice (our own optimistic update, then the realtime
+  // echo of the same row), so incrementing per payload double-counts.
+  const refreshCounts = useCallback(async () => {
+    const f = filtersRef.current;
+    let libQuery = supabase
+      .from("photos")
+      .select("id", { count: "exact", head: true })
+      .eq("event_id", eventId)
+      .neq("status", "pending");
+    if (f.status !== "all") libQuery = libQuery.eq("status", f.status);
+    if (f.slideshow !== "any")
+      libQuery = libQuery.eq("in_slideshow", f.slideshow === "yes");
+    if (f.search.trim())
+      libQuery = libQuery.ilike("uploader_name", `%${f.search.trim()}%`);
 
-  function reconcileAfterDelete(ids: Set<string>) {
-    setNeedsReview((prev) => removeIdsFromSection(prev, ids));
-    setSlideshow((prev) => removeIdsFromSection(prev, ids));
-    setLibrary((prev) => removeIdsFromSection(prev, ids));
-  }
+    const [nr, sl, lib] = await Promise.all([
+      supabase
+        .from("photos")
+        .select("id", { count: "exact", head: true })
+        .eq("event_id", eventId)
+        .eq("status", "pending"),
+      supabase
+        .from("photos")
+        .select("id", { count: "exact", head: true })
+        .eq("event_id", eventId)
+        .eq("status", "approved")
+        .eq("in_slideshow", true),
+      libQuery,
+    ]);
+
+    const nrCount = nr.count;
+    const slCount = sl.count;
+    const libCount = lib.count;
+    if (typeof nrCount === "number")
+      setNeedsReview((prev) => ({ ...prev, count: nrCount }));
+    if (typeof slCount === "number")
+      setSlideshow((prev) => ({ ...prev, count: slCount }));
+    if (typeof libCount === "number")
+      setLibrary((prev) => ({ ...prev, count: libCount }));
+  }, [eventId, supabase]);
+
+  const countRefreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scheduleCountRefresh = useCallback(() => {
+    if (countRefreshTimer.current) clearTimeout(countRefreshTimer.current);
+    countRefreshTimer.current = setTimeout(() => {
+      void refreshCounts();
+    }, COUNT_REFRESH_DEBOUNCE_MS);
+  }, [refreshCounts]);
+
+  useEffect(() => {
+    return () => {
+      if (countRefreshTimer.current) clearTimeout(countRefreshTimer.current);
+    };
+  }, []);
+
+  // Stable identities so the realtime subscription below can depend on
+  // them without tearing down and re-subscribing the channel on every
+  // render. Everything they close over is stable too (state setters, a
+  // ref, and a memoized callback).
+  const reconcileAfterPatch = useCallback(
+    (rows: Photo[]) => {
+      setNeedsReview((prev) => reconcileSection(prev, rows, matchesNeedsReview));
+      setSlideshow((prev) => reconcileSection(prev, rows, matchesSlideshow));
+      setLibrary((prev) =>
+        reconcileSection(prev, rows, (p) =>
+          matchesLibrary(p, filtersRef.current),
+        ),
+      );
+      scheduleCountRefresh();
+    },
+    [scheduleCountRefresh],
+  );
+
+  const reconcileAfterDelete = useCallback(
+    (ids: Set<string>) => {
+      setNeedsReview((prev) => removeIdsFromSection(prev, ids));
+      setSlideshow((prev) => removeIdsFromSection(prev, ids));
+      setLibrary((prev) => removeIdsFromSection(prev, ids));
+      scheduleCountRefresh();
+    },
+    [scheduleCountRefresh],
+  );
 
   // Realtime: patch/remove already-loaded rows live across all three
   // sections; never silently insert a row into a loaded page — bump that
@@ -140,53 +211,17 @@ export function PhotoManager({
     return () => {
       supabase.removeChannel(channel);
     };
+  }, [eventId, supabase, reconcileAfterPatch, reconcileAfterDelete]);
 
-  }, [eventId, supabase]);
-
-  // Poll fallback: lightweight count-only queries per section, so a
-  // dropped realtime connection still self-heals the counts without
-  // re-pulling every row.
+  // Poll fallback: the same count-only queries on a timer, so a dropped
+  // realtime connection still self-heals the counts without re-pulling
+  // every row.
   useEffect(() => {
-    const id = setInterval(async () => {
-      const [nr, sl] = await Promise.all([
-        supabase
-          .from("photos")
-          .select("id", { count: "exact", head: true })
-          .eq("event_id", eventId)
-          .eq("status", "pending"),
-        supabase
-          .from("photos")
-          .select("id", { count: "exact", head: true })
-          .eq("event_id", eventId)
-          .eq("status", "approved")
-          .eq("in_slideshow", true),
-      ]);
-      if (typeof nr.count === "number") {
-        setNeedsReview((prev) => ({ ...prev, count: nr.count! }));
-      }
-      if (typeof sl.count === "number") {
-        setSlideshow((prev) => ({ ...prev, count: sl.count! }));
-      }
-
-      let libQuery = supabase
-        .from("photos")
-        .select("id", { count: "exact", head: true })
-        .eq("event_id", eventId)
-        .neq("status", "pending");
-      const f = filtersRef.current;
-      if (f.status !== "all") libQuery = libQuery.eq("status", f.status);
-      if (f.slideshow !== "any")
-        libQuery = libQuery.eq("in_slideshow", f.slideshow === "yes");
-      if (f.search.trim())
-        libQuery = libQuery.ilike("uploader_name", `%${f.search.trim()}%`);
-      const lib = await libQuery;
-      if (typeof lib.count === "number") {
-        setLibrary((prev) => ({ ...prev, count: lib.count! }));
-      }
+    const id = setInterval(() => {
+      void refreshCounts();
     }, POLL_FALLBACK_MS);
     return () => clearInterval(id);
-
-  }, [eventId, supabase]);
+  }, [refreshCounts]);
 
   // Debounced search commit.
   useEffect(() => {

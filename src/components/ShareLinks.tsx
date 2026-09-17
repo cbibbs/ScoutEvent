@@ -14,6 +14,12 @@ function CopyableLink({ label, url }: { label: string; url: string }) {
       <span className="text-[12.5px] font-semibold text-ink-soft">
         {label}
       </span>
+      {/* US-2 requires the URL readable as text, not only as a QR code —
+          someone reading it aloud or typing it on a second device can't
+          scan their own screen. */}
+      <p className="w-full [overflow-wrap:anywhere] text-center text-[11px] leading-snug text-ink-faint select-all">
+        {url}
+      </p>
       <button
         type="button"
         onClick={() => {

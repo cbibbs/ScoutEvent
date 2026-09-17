@@ -44,9 +44,17 @@ export function matchesLibrary(p: Photo, filters: LibraryFilters): boolean {
 }
 
 // Patch/remove already-loaded rows live; never silently insert a row that
-// newly matches a section it wasn't loaded in — just bump the count
-// (design.md §3 of specs/004-photo-library-at-scale). Used for realtime
-// INSERT/UPDATE payloads and for this organizer's own optimistic updates.
+// newly matches a section it wasn't loaded in (design.md §3 of
+// specs/004-photo-library-at-scale). Used for realtime INSERT/UPDATE
+// payloads and for this organizer's own optimistic updates.
+//
+// Every branch here must be safe to run twice for the same row: the
+// organizer's own write is applied once optimistically and then again
+// when Supabase echoes that same UPDATE back over the realtime channel.
+// That is why a row newly matching an unloaded section does not adjust
+// the count here — incrementing would count the same photo twice. An
+// authoritative count query handles that case instead (refreshCounts in
+// PhotoManager).
 export function reconcileSection(
   prev: SectionState,
   updatedRows: Photo[],
@@ -58,16 +66,13 @@ export function reconcileSection(
   for (const row of updatedRows) {
     const idx = items.findIndex((p) => p.id === row.id);
     const isMatch = matches(row);
+    if (idx < 0) continue;
 
-    if (idx >= 0) {
-      if (isMatch) {
-        items = items.map((p) => (p.id === row.id ? row : p));
-      } else {
-        items = items.filter((p) => p.id !== row.id);
-        count = Math.max(0, count - 1);
-      }
-    } else if (isMatch) {
-      count = count + 1;
+    if (isMatch) {
+      items = items.map((p) => (p.id === row.id ? row : p));
+    } else {
+      items = items.filter((p) => p.id !== row.id);
+      count = Math.max(0, count - 1);
     }
   }
 
