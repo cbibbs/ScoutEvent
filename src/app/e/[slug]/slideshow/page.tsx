@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { Slideshow } from "@/components/Slideshow";
+import { computeUploadsOpen } from "@/lib/uploadWindow";
 import type { Event, Photo } from "@/lib/supabase/types";
 
 export default async function SlideshowPage({
@@ -34,6 +35,13 @@ export default async function SlideshowPage({
       eventName={event.name}
       intervalSeconds={event.slideshow_interval_seconds}
       initialPhotos={photos ?? []}
+      slug={event.slug}
+      uploadStartsAt={event.upload_starts_at}
+      uploadEndsAt={event.upload_ends_at}
+      initialUploadsOpen={computeUploadsOpen(
+        event.upload_starts_at,
+        event.upload_ends_at,
+      )}
     />
   );
 }

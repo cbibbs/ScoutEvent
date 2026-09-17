@@ -2,19 +2,8 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { UploadForm } from "@/components/UploadForm";
+import { uploadWindowState } from "@/lib/uploadWindow";
 import type { Event } from "@/lib/supabase/types";
-
-function uploadWindowState(event: Event) {
-  const now = Date.now();
-  return {
-    notOpenYet: Boolean(
-      event.upload_starts_at && now < new Date(event.upload_starts_at).getTime(),
-    ),
-    closed: Boolean(
-      event.upload_ends_at && now > new Date(event.upload_ends_at).getTime(),
-    ),
-  };
-}
 
 export default async function GuestUploadPage({
   params,
@@ -32,7 +21,10 @@ export default async function GuestUploadPage({
 
   if (!event) notFound();
 
-  const { notOpenYet, closed } = uploadWindowState(event);
+  const { notOpenYet, closed } = uploadWindowState(
+    event.upload_starts_at,
+    event.upload_ends_at,
+  );
 
   return (
     <div className="min-h-screen bg-ground">
