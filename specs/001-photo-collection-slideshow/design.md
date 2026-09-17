@@ -8,7 +8,7 @@ service choice must satisfy the "zero recurring cost" constraint in
 
 | Concern | Choice | Free-tier limits relied on | Satisfies |
 |---|---|---|---|
-| App framework | Next.js 14 (App Router, TypeScript) | n/a (open source) | all |
+| App framework | Next.js 16 (App Router, TypeScript) | n/a (open source) | all |
 | Hosting | Vercel (Hobby plan) | 100GB bandwidth/mo, unlimited static requests | US-7 |
 | Auth | Supabase Auth (magic-link email) | included in Supabase free project | US-1 |
 | Database | Supabase Postgres | 500MB DB, project pauses after 1 week idle (free tier) | US-1, US-4, US-6 |
@@ -28,6 +28,20 @@ with no API activity. Mitigation: document this in the README (organizer
 should log in a day or two before the event to "wake" the project), and
 optionally add a scheduled GitHub Actions ping (free, 2,000 min/mo) as a
 future enhancement — out of scope for MVP but noted in `tasks.md`.
+
+**Next.js 16 specifics.** This project is on Next.js 16, which differs
+from older App Router material in ways that affect any code written
+against these specs (the repo root `AGENTS.md` says to read
+`node_modules/next/dist/docs/` before writing code, for exactly this
+reason):
+
+- Route middleware is `src/proxy.ts` exporting `proxy(request)`, not
+  `middleware.ts`/`middleware()`.
+- A route's `params` is a `Promise` and must be awaited.
+- The React Compiler lint rules are enforced: no impure calls in a
+  render body, no ref mutation during render, and no synchronous
+  `setState` in an effect body (use derived state, a ref, or a real
+  subscription callback instead).
 
 ## 2. Data model (Postgres, via Supabase migrations)
 

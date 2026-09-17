@@ -50,7 +50,9 @@ taps, without creating an account.
 
 - WHEN a guest opens the guest upload URL for an event, THE SYSTEM SHALL
   show the event name and an upload control that works on mobile
-  browsers (including direct camera capture).
+  browsers, offering the guest a choice between taking a new photo and
+  picking existing ones. THE SYSTEM SHALL NOT force the camera open
+  directly, since guests often already took the photo earlier.
 - WHEN a guest selects one or more photos, THE SYSTEM SHALL upload each
   photo and show per-photo upload progress and success/failure state.
 - THE SYSTEM SHALL let a guest optionally attach a display name to their
@@ -75,8 +77,13 @@ publicly, so inappropriate content doesn't reach the slideshow.
   THE SYSTEM SHALL mark it "approved" immediately.
 - WHEN an organizer views the moderation queue, THE SYSTEM SHALL let them
   approve or reject each pending photo.
-- WHEN an organizer rejects or deletes a photo, THE SYSTEM SHALL remove
-  it from the slideshow/gallery and from storage.
+- WHEN an organizer rejects a photo, THE SYSTEM SHALL remove it from the
+  slideshow and public gallery, but SHALL keep its file and its row so
+  the decision is reversible.
+- WHEN an organizer deletes a photo, THE SYSTEM SHALL remove its file
+  and its row permanently. Delete is the only action that destroys a
+  photo (see US-6, and Feature 003 US-11 for why the two must stay
+  visibly distinct).
 
 ### US-5: Live slideshow
 

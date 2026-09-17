@@ -138,8 +138,14 @@ this feature removes. Revised behavior:
 
 ## 4. "Review one at a time"
 
-A focused view, entered from Needs Review's "Review one at a time"
-button, exited back to the grid at any point:
+A focused view at its own route, `/dashboard/[slug]/review`, entered
+from Needs Review's "Review one at a time" button and exited back to
+the grid at any point. A route rather than a modal so the organizer can
+deep-link/bookmark it and so a phone gets the whole screen for one
+photo (§6) — this is the "revisit as a dedicated route if the combined
+page gets unwieldy" escape hatch left open in Feature 002's out-of-scope
+list, now taken. It reuses the management page's auth guard (Feature 001
+US-6: only the owning organizer).
 
 - Reuses the same oldest-first paginated query as the grid; shows one
   photo at a time, full-size, with Approve/Reject/Skip.
@@ -171,7 +177,7 @@ button, exited back to the grid at any point:
 
 Pagination removes most of the cost of opening the page (bounded number
 of images per load instead of hundreds), but each loaded grid cell still
-requests the *full* compressed photo (design.md §5 of Feature 001: up to
+requests the *full* compressed photo (design.md §4 of Feature 002: up to
 0.6MB) just to render a small square. Two ways to actually fix that,
 neither built in this feature:
 
@@ -203,10 +209,17 @@ Library's search/filter/bulk tools, which don't work well on a touch
 keyboard-less screen at this stage.
 
 This is **one responsive component**, not a separate mobile route or
-app — a narrow-viewport breakpoint (phone width, e.g. Tailwind's `sm:`
-boundary) swaps which controls render, using the same data/queries from
-§1 and the same actions from Feature 002 §2. No forked logic to keep in
-sync.
+app — a single breakpoint swaps which controls render, using the same
+data/queries from §1 and the same actions from Feature 002 §2. No
+forked logic to keep in sync.
+
+The breakpoint is Tailwind's `lg:` (1024px), not a phone-only boundary
+like `sm:`: the desktop layout needs room for the Library toolbar
+(search + three filter controls + Select) on one row *and* a 4-column
+grid, and both get cramped well before phone width. So tablets and
+narrow laptop windows get the simplified layout too. That's the
+intended tradeoff — the simplified layout is a legitimate way to use
+the page, not a degraded one.
 
 Below the breakpoint:
 

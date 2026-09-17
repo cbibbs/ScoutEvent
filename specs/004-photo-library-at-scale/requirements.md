@@ -32,9 +32,9 @@ the page stays fast and the query stays bounded regardless of event
 size.
 
 - WHEN an organizer opens an event with more photos than fit on one
-  page, THE SYSTEM SHALL load an initial page (Needs Review and Library
-  each independently) and offer a way to load more, rather than fetching
-  every photo for the event in one query.
+  page, THE SYSTEM SHALL load an initial page (Needs Review, Slideshow,
+  and Library each independently — see US-15) and offer a way to load
+  more, rather than fetching every photo for the event in one query.
 - THE SYSTEM SHALL show an accurate total count (e.g., "Showing 1-24 of
   220") so the organizer knows how much is left.
 - Consistent with Feature 003's realtime requirement (US-10): an update
@@ -52,10 +52,11 @@ photo hundreds of times.
 - WHEN an organizer views the Library, THE SYSTEM SHALL let them filter
   by status (approved/rejected) and by slideshow membership, search by
   uploader name, and sort by upload time.
-- WHEN an organizer selects multiple photos (Needs Review or Library),
-  THE SYSTEM SHALL let them apply one action to the whole selection:
-  Approve/Reject selected in Needs Review; Add to slideshow/Remove from
-  slideshow/Delete selected in Library.
+- WHEN an organizer selects multiple photos in any section, THE SYSTEM
+  SHALL let them apply one action to the whole selection: Approve/Reject
+  selected in Needs Review; Remove from slideshow selected in Slideshow
+  (US-15); Add to slideshow/Remove from slideshow/Delete selected in
+  Library.
 - A bulk action SHALL have the same effect as applying it to each
   selected photo individually (same RLS, same side effects — e.g. bulk
   Delete still removes each file from storage), just in fewer requests.
@@ -111,15 +112,17 @@ still let me review photos and manage what's live on the slideshow, so
 I'm not stuck waiting for a computer, while the heavier tools (search,
 filters, bulk actions) stay desktop-first.
 
-- WHEN Manage Event is opened on a phone-width viewport, THE SYSTEM
-  SHALL keep Needs Review and Slideshow fully usable — inline
-  Approve/Reject and a prominent path into "Review one at a time" for
-  Needs Review; per-photo Remove from slideshow for Slideshow.
-- THE SYSTEM SHALL show Library as a read-only summary on a phone-width
-  viewport (recent photos, total count) rather than its full
+- WHEN Manage Event is opened on a viewport too narrow for the full
+  desktop layout (phone or tablet — see design.md §6 for where that
+  boundary sits and why), THE SYSTEM SHALL keep Needs Review and
+  Slideshow fully usable — inline Approve/Reject and a prominent path
+  into "Review one at a time" for Needs Review; per-photo Remove from
+  slideshow for Slideshow.
+- THE SYSTEM SHALL show Library as a read-only summary on that viewport
+  (recent photos, total count) rather than its full
   search/filter/sort/bulk toolset.
-- THE SYSTEM SHALL show a persistent, dismissible note on a phone-width
-  viewport that the full toolset is available on a larger screen.
+- THE SYSTEM SHALL show a persistent, dismissible note on that viewport
+  that the full toolset is available on a larger screen.
 - THE SYSTEM SHALL NOT require a separate app, route, or link for this —
   the same Manage Event page adapts to viewport width.
 
@@ -128,7 +131,7 @@ filters, bulk actions) stay desktop-first.
 - Real thumbnails (a second, smaller generated image per photo). Kept
   out for now — pagination alone removes most of the cost of opening the
   page; a dedicated thumbnail pipeline is a larger, separate change (see
-  design.md §4) and should only be built if pagination isn't enough.
+  design.md §5) and should only be built if pagination isn't enough.
 - Bulk ZIP download — still deferred from Feature 001 design §7. This
   feature's multi-select mechanism is deliberately the same shape a
   future "download selected" action would reuse, but building that

@@ -60,3 +60,8 @@ in the slideshow, without ever deleting anything I might want later.
   slideshow-curation library are both reachable from the existing event
   management page (`/dashboard/[slug]`) as distinct sections. Revisit as
   a dedicated route if the combined page gets unwieldy.
+  **Revisited in Feature 004 US-14**: at hundreds of photos the combined
+  page did get unwieldy, so a dedicated `/dashboard/[slug]/review` route
+  was added for fast one-at-a-time triage. The sections described here
+  remain on the management page; the route is an additional entry point,
+  not a replacement.

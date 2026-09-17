@@ -6,7 +6,7 @@ passing, and manually verified where noted).
 
 ## Phase 0 — Project scaffold
 
-- [x] T0.1 Initialize Next.js 14 + TypeScript + Tailwind app at repo root
+- [x] T0.1 Initialize Next.js 16 + TypeScript + Tailwind app at repo root
       (design §4).
 - [x] T0.2 Add ESLint/Prettier config, `.gitignore`, `.env.example` listing
       `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY`.
