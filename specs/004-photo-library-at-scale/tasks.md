@@ -3,17 +3,21 @@
 Each task is checked off `[x]` only once actually implemented (and,
 where applicable, verified) — per `specs/CONSTITUTION.md`.
 
-## Phase 1 — Paginated queries (US-12)
+## Phase 1 — Paginated queries (US-12, US-15)
 
 - [ ] T1.1 Needs Review: paginated query (oldest-first, `range`,
       `count: "exact"`), "Load more" footer with accurate
       "Showing X of Y" (design §1).
-- [ ] T1.2 Library: paginated query with status filter, in-slideshow
+- [ ] T1.2 Slideshow: paginated query (`status=approved`,
+      `in_slideshow=true`, oldest-first to match TV playback order),
+      same "Load more" pattern (design §1).
+- [ ] T1.3 Library: paginated query with status filter, in-slideshow
       filter, uploader-name search, sort, same "Load more" pattern
       (design §1).
-- [ ] T1.3 Revise the realtime handler and 30s poll fallback per design
-      §3 — patch/remove already-loaded rows live, don't auto-append new
-      inserts into a loaded page, poll only refreshes counts.
+- [ ] T1.4 Revise the realtime handler and 30s poll fallback per design
+      §3 — patch/remove already-loaded rows live across all three
+      sections, don't auto-append new inserts or cross-section matches
+      into a loaded page (bump counts only), poll only refreshes counts.
 
 ## Phase 2 — Search, filter, sort UI (US-13)
 
@@ -22,14 +26,15 @@ where applicable, verified) — per `specs/CONSTITUTION.md`.
 - [ ] T2.2 Lazy-load grid images (`loading="lazy"`) per design §5's
       free mitigation.
 
-## Phase 3 — Bulk actions (US-13)
+## Phase 3 — Bulk actions (US-13, US-15)
 
 - [ ] T3.1 Selection state (per section) + checkbox affordance on each
-      card — visible by default in Needs Review, behind a "Select"
-      toggle in Library (design §2).
+      card — visible by default in Needs Review and Slideshow, behind a
+      "Select" toggle in Library (design §2).
 - [ ] T3.2 Bulk action bar: Approve/Reject selected (Needs Review);
-      Add/Remove-from-slideshow selected, Delete selected (Library) —
-      single batched request per action (design §2).
+      Remove from slideshow selected (Slideshow); Add/Remove-from-slideshow
+      selected, Delete selected (Library) — single batched request per
+      action (design §2).
 
 ## Phase 4 — Review one at a time (US-14)
 

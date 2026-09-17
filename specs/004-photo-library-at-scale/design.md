@@ -9,8 +9,8 @@ implementation plan for what that screen now shows.
 ## 1. Paginated queries
 
 Replace `PhotoManagementGrid`'s single unbounded
-`select("*").eq("event_id", eventId)` with two independently-paginated
-queries, one per section.
+`select("*").eq("event_id", eventId)` with three independently-paginated
+queries, one per section: **Needs Review**, **Slideshow**, **Library**.
 
 **Needs Review** (oldest first — it's a queue; a newly-arrived photo
 lands at the end, not on the page the organizer is currently looking
@@ -23,10 +23,33 @@ supabase
   .eq("event_id", eventId)
   .eq("status", "pending")
   .order("created_at", { ascending: true })
-  .range(offset, offset + REVIEW_PAGE_SIZE - 1);
+  .range(offset, offset + NEEDS_REVIEW_PAGE_SIZE - 1);
 ```
 
-**Library** (filterable/sortable, default newest first):
+**Slideshow** — approved photos currently live on the venue screen. Same
+oldest-first order as the slideshow itself plays them (`Slideshow.tsx`'s
+`order("created_at", { ascending: true })`), so the panel matches what's
+coming up next on the TV:
+
+```js
+supabase
+  .from("photos")
+  .select("*", { count: "exact" })
+  .eq("event_id", eventId)
+  .eq("status", "approved")
+  .eq("in_slideshow", true)
+  .order("created_at", { ascending: true })
+  .range(offset, offset + SLIDESHOW_PAGE_SIZE - 1);
+```
+
+This is the fast path for "look at what's live, pull stuff" (surfaced as
+a gap: burying this behind Library's "in slideshow" filter wasn't enough
+for that specific, common task). Library's existing filter stays for
+full-archive search — the two views can show overlapping photos, same as
+an inbox and a "starred" view over the same underlying mail.
+
+**Library** (full archive — approved and rejected, in or out of the
+slideshow; filterable/sortable, default newest first):
 
 ```js
 let q = supabase
@@ -42,9 +65,10 @@ if (slideshowFilter !== "any") q = q.eq("in_slideshow", slideshowFilter === "yes
 if (search.trim()) q = q.ilike("uploader_name", `%${search.trim()}%`);
 ```
 
-`REVIEW_PAGE_SIZE`/`LIBRARY_PAGE_SIZE` (start at 8/24 — matches the
-canvas mockup's "Showing 1-8 of 47" / "Showing 1-24 of 220") are tuning
-constants, not protocol. "Load more" re-issues the same query with
+`NEEDS_REVIEW_PAGE_SIZE`/`SLIDESHOW_PAGE_SIZE`/`LIBRARY_PAGE_SIZE` (start
+at 8/16/24 — matches the canvas mockup's "Showing 1-8 of 47" / "Showing
+1-16 of 58" / "Showing 1-24 of 220") are tuning constants, not protocol.
+"Load more" re-issues the same query with
 `offset += PAGE_SIZE` and appends to the locally held array; the
 `count`-with-`range` response gives the total for the "Showing X of Y"
 label. Changing any Library filter/sort/search resets `offset` to 0 and
@@ -71,9 +95,13 @@ supabase.from("photos").delete().in("id", Array.from(selectedIds));
 
 Same patch shapes as the existing single-photo actions (design.md §2 of
 Feature 002) — a bulk action is that same patch applied to many rows at
-once, not new semantics. Needs Review shows selection checkboxes by
-default (it's inherently a work queue); Library keeps them behind an
-explicit "Select" toggle so ordinary browsing stays uncluttered.
+once, not new semantics. Needs Review and Slideshow show selection
+checkboxes by default — both are task-focused sections ("get through
+this queue" / "get this off the screen"), not browsing views. Slideshow's
+bulk action is "Remove from slideshow selected" (`in_slideshow: false`
+patch) — the same action as its per-card button, batched. Library keeps
+checkboxes behind an explicit "Select" toggle so ordinary browsing stays
+uncluttered.
 
 ## 3. Realtime + polling at scale (revises Feature 003 §1)
 
@@ -81,11 +109,18 @@ Feature 003 added a realtime subscription plus a 30s poll that
 re-fetched *every* photo for the event — exactly the unbounded query
 this feature removes. Revised behavior:
 
-- **UPDATE**: if the row's id is in a currently-loaded page (either
+- **UPDATE**: if the row's id is in a currently-loaded page (any
   section), patch it in place — unchanged from Feature 003. If a patch
-  changes `status` such that the row no longer matches its section's
-  filter (e.g. a photo approved elsewhere while stale-loaded in Needs
-  Review), remove it from that local list.
+  changes `status`/`in_slideshow` such that the row no longer matches
+  that section's filter (e.g. a photo approved elsewhere while
+  stale-loaded in Needs Review, or removed from the slideshow from
+  another tab while loaded in Slideshow), remove it from that local
+  list. If the row now matches a *different* section it wasn't loaded in
+  (e.g. approved from Needs Review — now belongs in Slideshow; or added
+  to the slideshow from Library), do **not** insert it into that other
+  section's already-loaded page — same reasoning as INSERT below. Just
+  bump that section's count; the organizer reaches it by paging or
+  reopening that section.
 - **INSERT**: do **not** append to an already-loaded page — Needs
   Review's oldest-first order means a new upload belongs at the end of
   the full set, not the page currently in view, so silently inserting it
@@ -96,9 +131,10 @@ this feature removes. Revised behavior:
 - **DELETE**: remove by id from any loaded page, as today.
 - **Poll fallback**: replace the full re-fetch with a lightweight
   `count`-only query (`select("id", { count: "exact", head: true })`)
-  per section, so a dropped realtime connection still self-heals the
-  *counts* without re-pulling every row; a stale loaded page resolves
-  itself next time the organizer pages or refreshes.
+  per section (Needs Review, Slideshow, Library), so a dropped realtime
+  connection still self-heals the *counts* without re-pulling every row;
+  a stale loaded page resolves itself next time the organizer pages or
+  refreshes.
 
 ## 4. "Review one at a time"
 

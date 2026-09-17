@@ -83,6 +83,26 @@ without hunting for tiny buttons in a grid.
   approved/rejected vs. skipped, rather than silently returning to the
   grid.
 
+### US-15: Dedicated slideshow section
+
+As an organizer, I want a section that shows exactly what's currently
+playing in the slideshow, separate from the full library, so I can
+quickly scan what's live and pull things without hunting through every
+photo ever approved.
+
+- WHEN an organizer opens Manage Event, THE SYSTEM SHALL show a
+  "Slideshow" section — separate from Needs Review and Library —
+  listing only approved photos currently in the slideshow, in the same
+  order the slideshow itself plays them.
+- THE SYSTEM SHALL let the organizer select photos in this section and
+  remove them from the slideshow in bulk, using the same selection
+  mechanism as US-13.
+- Removing a photo from the slideshow here SHALL NOT delete it or change
+  its approved status — it still appears in Library (Feature 002 design
+  §2). Library's existing "in slideshow" filter is retained for
+  full-archive search; this section is the fast path for the common
+  "what's live right now" task.
+
 ## Out of scope (this feature)
 
 - Real thumbnails (a second, smaller generated image per photo). Kept
