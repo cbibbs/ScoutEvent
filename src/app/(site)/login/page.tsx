@@ -38,14 +38,14 @@ function LoginForm() {
   }
 
   return (
-    <div className="mx-auto flex min-h-[70vh] max-w-sm flex-col justify-center px-4">
-      <h1 className="mb-2 text-2xl font-semibold">Organizer sign in</h1>
-      <p className="mb-6 text-sm text-gray-600 dark:text-gray-400">
+    <div className="mx-auto flex min-h-[70vh] max-w-sm flex-col justify-center px-6">
+      <h1 className="mb-2 font-display text-2xl">Organizer sign in</h1>
+      <p className="mb-6 text-sm text-ink-soft">
         We&apos;ll email you a magic link — no password needed.
       </p>
 
       {status === "sent" ? (
-        <p className="rounded-md bg-green-50 p-4 text-sm text-green-800 dark:bg-green-950 dark:text-green-300">
+        <p className="card p-4 text-sm text-success">
           Check your inbox for a sign-in link.
         </p>
       ) : (
@@ -56,16 +56,16 @@ function LoginForm() {
             placeholder="you@example.com"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="rounded-md border border-gray-300 px-3 py-2 dark:border-gray-700 dark:bg-gray-900"
+            className="input"
           />
           <button
             type="submit"
             disabled={status === "sending"}
-            className="rounded-md bg-blue-600 px-3 py-2 font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+            className="btn btn-primary"
           >
             {status === "sending" ? "Sending…" : "Send magic link"}
           </button>
-          {error && <p className="text-sm text-red-600">{error}</p>}
+          {error && <p className="text-sm text-danger">{error}</p>}
         </form>
       )}
     </div>

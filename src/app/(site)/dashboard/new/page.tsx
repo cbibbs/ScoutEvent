@@ -49,27 +49,27 @@ export default function NewEventPage() {
   }
 
   return (
-    <div className="mx-auto max-w-lg px-4 py-10">
-      <h1 className="mb-6 text-2xl font-semibold">Create an event</h1>
+    <div className="mx-auto max-w-lg px-6 py-12">
+      <h1 className="mb-6 font-display text-2xl">Create an event</h1>
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-        <label className="flex flex-col gap-1">
-          <span className="text-sm font-medium">Event name</span>
+        <label className="flex flex-col">
+          <span className="field-label">Event name</span>
           <input
             required
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="Troop 1610 Fall Campout"
-            className="rounded-md border border-gray-300 px-3 py-2 dark:border-gray-700 dark:bg-gray-900"
+            className="input"
           />
         </label>
 
-        <label className="flex flex-col gap-1">
-          <span className="text-sm font-medium">Event date (optional)</span>
+        <label className="flex flex-col">
+          <span className="field-label">Event date (optional)</span>
           <input
             type="date"
             value={eventDate}
             onChange={(e) => setEventDate(e.target.value)}
-            className="rounded-md border border-gray-300 px-3 py-2 dark:border-gray-700 dark:bg-gray-900"
+            className="input"
           />
         </label>
 
@@ -79,7 +79,7 @@ export default function NewEventPage() {
             checked={moderationEnabled}
             onChange={(e) => setModerationEnabled(e.target.checked)}
           />
-          <span className="text-sm">
+          <span className="text-sm text-ink-soft">
             Require my approval before photos appear (moderation)
           </span>
         </label>
@@ -87,12 +87,12 @@ export default function NewEventPage() {
         <button
           type="submit"
           disabled={submitting}
-          className="mt-2 rounded-md bg-blue-600 px-4 py-2 font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+          className="btn btn-primary mt-2 w-fit"
         >
           {submitting ? "Creating…" : "Create event"}
         </button>
 
-        {error && <p className="text-sm text-red-600">{error}</p>}
+        {error && <p className="text-sm text-danger">{error}</p>}
       </form>
     </div>
   );

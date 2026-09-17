@@ -109,9 +109,25 @@ export function UploadForm({ eventId }: { eventId: string }) {
 
   return (
     <div className="flex w-full flex-col gap-4">
-      <label className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-md border-2 border-dashed border-gray-300 px-4 py-10 text-center hover:border-blue-400 dark:border-gray-700">
-        <span className="font-medium">Tap to add photos</span>
-        <span className="text-xs text-gray-500">
+      <label className="flex cursor-pointer flex-col items-center justify-center gap-3 rounded-lg border-2 border-dashed border-primary bg-primary-tint px-5 py-10 text-center">
+        <svg
+          width="34"
+          height="34"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="var(--color-primary)"
+          strokeWidth="1.7"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <rect x="3" y="7" width="18" height="14" rx="2.5" />
+          <path d="M8 7 L9.5 4 H14.5 L16 7" />
+          <circle cx="12" cy="14" r="3.6" />
+        </svg>
+        <span className="text-base font-bold text-primary-dark">
+          Tap to add photos
+        </span>
+        <span className="text-[13px] text-ink-soft">
           Use your camera or pick from your gallery
         </span>
         <input
@@ -128,17 +144,17 @@ export function UploadForm({ eventId }: { eventId: string }) {
           {queue.map((f) => (
             <li
               key={f.id}
-              className="flex items-center justify-between gap-2 rounded-md border border-gray-200 px-3 py-2 text-sm dark:border-gray-800"
+              className="flex items-center justify-between gap-2 rounded-md border border-border-soft bg-surface-raised px-3 py-2 text-sm"
             >
               <span className="truncate">{f.name}</span>
               <span className="flex shrink-0 items-center gap-2">
                 <span
                   className={
                     f.status === "done"
-                      ? "text-green-600"
+                      ? "flex items-center gap-1 font-semibold text-success"
                       : f.status === "error"
-                        ? "text-red-600"
-                        : "text-gray-500"
+                        ? "text-danger"
+                        : "text-ink-soft"
                   }
                 >
                   {f.status === "compressing" && "Preparing…"}
@@ -150,7 +166,7 @@ export function UploadForm({ eventId }: { eventId: string }) {
                   <button
                     type="button"
                     onClick={() => retry(f)}
-                    className="rounded border border-gray-300 px-2 py-0.5 text-xs hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-900"
+                    className="rounded border border-border px-2 py-0.5 text-xs hover:border-ink-faint"
                   >
                     Retry
                   </button>
@@ -161,13 +177,13 @@ export function UploadForm({ eventId }: { eventId: string }) {
         </ul>
       )}
 
-      <label className="flex flex-col gap-1">
-        <span className="text-sm font-medium">Your name (optional)</span>
+      <label className="flex flex-col">
+        <span className="field-label">Your name (optional)</span>
         <input
           value={uploaderName}
           onChange={(e) => setUploaderName(e.target.value)}
           placeholder="e.g. Alex"
-          className="rounded-md border border-gray-300 px-3 py-2 dark:border-gray-700 dark:bg-gray-900"
+          className="input"
         />
       </label>
     </div>

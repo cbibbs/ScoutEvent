@@ -7,29 +7,24 @@ function CopyableLink({ label, url }: { label: string; url: string }) {
   const [copied, setCopied] = useState(false);
 
   return (
-    <div className="flex flex-col items-center gap-3">
-      <p className="text-sm font-medium">{label}</p>
-      <div className="rounded-md border border-gray-200 bg-white p-3 dark:border-gray-800">
-        <QRCodeSVG value={url} size={160} />
+    <div className="flex flex-col items-center gap-2.5">
+      <div className="rounded-md border border-border bg-white p-2.5">
+        <QRCodeSVG value={url} size={110} />
       </div>
-      <div className="flex w-full max-w-xs items-center gap-2">
-        <input
-          readOnly
-          value={url}
-          className="w-full truncate rounded-md border border-gray-300 bg-gray-50 px-2 py-1 text-xs dark:border-gray-700 dark:bg-gray-900"
-        />
-        <button
-          type="button"
-          onClick={() => {
-            navigator.clipboard.writeText(url);
-            setCopied(true);
-            setTimeout(() => setCopied(false), 1500);
-          }}
-          className="shrink-0 rounded-md border border-gray-300 px-2 py-1 text-xs hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-900"
-        >
-          {copied ? "Copied!" : "Copy"}
-        </button>
-      </div>
+      <span className="text-[12.5px] font-semibold text-ink-soft">
+        {label}
+      </span>
+      <button
+        type="button"
+        onClick={() => {
+          navigator.clipboard.writeText(url);
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1500);
+        }}
+        className="btn btn-outline btn-sm w-full"
+      >
+        {copied ? "Copied!" : "Copy link"}
+      </button>
     </div>
   );
 }
@@ -42,10 +37,10 @@ export function ShareLinks({ slug }: { slug: string }) {
   if (!origin) return null;
 
   return (
-    <div className="grid grid-cols-1 gap-8 sm:grid-cols-2">
-      <CopyableLink label="Guest upload link" url={`${origin}/e/${slug}`} />
+    <div className="grid grid-cols-2 gap-5">
+      <CopyableLink label="Guest upload" url={`${origin}/e/${slug}`} />
       <CopyableLink
-        label="Slideshow (for the venue screen)"
+        label="Slideshow (TV)"
         url={`${origin}/e/${slug}/slideshow`}
       />
     </div>

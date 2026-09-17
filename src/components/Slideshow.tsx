@@ -109,12 +109,12 @@ export function Slideshow({
         />
       ) : (
         <div className="flex flex-col items-center gap-2 text-white">
-          <p className="text-2xl font-semibold">{eventName}</p>
-          <p className="text-gray-400">Waiting for the first photo…</p>
+          <p className="font-display text-3xl">{eventName}</p>
+          <p className="text-white/50">Waiting for the first photo…</p>
         </div>
       )}
       {current?.uploader_name && (
-        <p className="absolute bottom-6 left-0 right-0 text-center text-sm text-white/70">
+        <p className="absolute right-0 bottom-6 left-0 text-center text-sm text-white/70">
           {current.uploader_name}
         </p>
       )}

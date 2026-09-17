@@ -68,49 +68,49 @@ export function EventSettingsForm({ event }: { event: Event }) {
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-      <label className="flex flex-col gap-1">
-        <span className="text-sm font-medium">Event name</span>
+      <label className="flex flex-col">
+        <span className="field-label">Event name</span>
         <input
           required
           value={name}
           onChange={(e) => setName(e.target.value)}
-          className="rounded-md border border-gray-300 px-3 py-2 dark:border-gray-700 dark:bg-gray-900"
+          className="input"
         />
       </label>
 
-      <label className="flex flex-col gap-1">
-        <span className="text-sm font-medium">Event date</span>
+      <label className="flex flex-col">
+        <span className="field-label">Event date</span>
         <input
           type="date"
           value={eventDate}
           onChange={(e) => setEventDate(e.target.value)}
-          className="rounded-md border border-gray-300 px-3 py-2 dark:border-gray-700 dark:bg-gray-900"
+          className="input"
         />
       </label>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <label className="flex flex-col gap-1">
-          <span className="text-sm font-medium">Uploads open (optional)</span>
+        <label className="flex flex-col">
+          <span className="field-label">Uploads open (optional)</span>
           <input
             type="datetime-local"
             value={uploadStartsAt}
             onChange={(e) => setUploadStartsAt(e.target.value)}
-            className="rounded-md border border-gray-300 px-3 py-2 dark:border-gray-700 dark:bg-gray-900"
+            className="input"
           />
         </label>
-        <label className="flex flex-col gap-1">
-          <span className="text-sm font-medium">Uploads close (optional)</span>
+        <label className="flex flex-col">
+          <span className="field-label">Uploads close (optional)</span>
           <input
             type="datetime-local"
             value={uploadEndsAt}
             onChange={(e) => setUploadEndsAt(e.target.value)}
-            className="rounded-md border border-gray-300 px-3 py-2 dark:border-gray-700 dark:bg-gray-900"
+            className="input"
           />
         </label>
       </div>
 
-      <label className="flex flex-col gap-1">
-        <span className="text-sm font-medium">
+      <label className="flex flex-col">
+        <span className="field-label">
           Slideshow advance interval (seconds)
         </span>
         <input
@@ -119,7 +119,7 @@ export function EventSettingsForm({ event }: { event: Event }) {
           max={60}
           value={slideshowInterval}
           onChange={(e) => setSlideshowInterval(Number(e.target.value))}
-          className="w-32 rounded-md border border-gray-300 px-3 py-2 dark:border-gray-700 dark:bg-gray-900"
+          className="input w-32"
         />
       </label>
 
@@ -129,7 +129,7 @@ export function EventSettingsForm({ event }: { event: Event }) {
           checked={moderationEnabled}
           onChange={(e) => setModerationEnabled(e.target.checked)}
         />
-        <span className="text-sm">
+        <span className="text-sm text-ink-soft">
           Require my approval before photos appear (moderation)
         </span>
       </label>
@@ -137,14 +137,12 @@ export function EventSettingsForm({ event }: { event: Event }) {
       <button
         type="submit"
         disabled={status === "saving"}
-        className="w-fit rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+        className="btn btn-outline btn-sm w-fit"
       >
         {status === "saving" ? "Saving…" : "Save settings"}
       </button>
-      {status === "saved" && (
-        <p className="text-sm text-green-600">Saved.</p>
-      )}
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {status === "saved" && <p className="text-sm text-success">Saved.</p>}
+      {error && <p className="text-sm text-danger">{error}</p>}
     </form>
   );
 }

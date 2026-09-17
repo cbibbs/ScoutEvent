@@ -16,37 +16,38 @@ export default async function DashboardPage() {
     .returns<Event[]>();
 
   return (
-    <div className="mx-auto max-w-4xl px-4 py-10">
-      <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Your events</h1>
-        <Link
-          href="/dashboard/new"
-          className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
-        >
+    <div className="mx-auto max-w-4xl px-6 py-12">
+      <div className="mb-8 flex items-center justify-between">
+        <h1 className="font-display text-2xl">Your events</h1>
+        <Link href="/dashboard/new" className="btn btn-primary btn-sm">
           New event
         </Link>
       </div>
 
       {!events || events.length === 0 ? (
-        <p className="text-gray-600 dark:text-gray-400">
-          No events yet. Create your first one to get a guest upload link and
-          a slideshow.
-        </p>
+        <div className="card p-8 text-center">
+          <p className="text-ink-soft">
+            No events yet. Create your first one to get a guest upload link
+            and a slideshow.
+          </p>
+        </div>
       ) : (
-        <ul className="divide-y divide-gray-200 rounded-md border border-gray-200 dark:divide-gray-800 dark:border-gray-800">
+        <ul className="flex flex-col gap-3">
           {events.map((event) => (
             <li key={event.id}>
               <Link
                 href={`/dashboard/${event.slug}`}
-                className="flex items-center justify-between px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-900"
+                className="card flex items-center justify-between px-5 py-4 hover:border-ink-faint"
               >
                 <div>
-                  <p className="font-medium">{event.name}</p>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">
+                  <p className="font-semibold">{event.name}</p>
+                  <p className="text-sm text-ink-soft">
                     {event.event_date ?? "No date set"}
                   </p>
                 </div>
-                <span className="text-sm text-gray-400">Manage →</span>
+                <span className="text-sm font-semibold text-primary">
+                  Manage →
+                </span>
               </Link>
             </li>
           ))}
