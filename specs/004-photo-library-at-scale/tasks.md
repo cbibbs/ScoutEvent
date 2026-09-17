@@ -43,6 +43,14 @@ where applicable, verified) — per `specs/CONSTITUTION.md`.
       (not live), completion state at session end, exit to grid at any
       point (design §4).
 
+## Phase 5b — Mobile breakpoint (US-16)
+
+- [ ] T5b.1 Phone-width layout for Manage Event (same component, one
+      breakpoint) — dismissible "bigger screen" banner; Needs Review with
+      inline Approve/Reject plus a prominent "Review one at a time"
+      entry; Slideshow with per-photo remove; Library as a read-only
+      recent-photos summary with no search/filter/bulk UI (design §6).
+
 ## Phase 5 — Verify
 
 - [ ] T5.1 Build/lint clean.

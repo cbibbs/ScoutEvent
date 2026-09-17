@@ -189,3 +189,43 @@ neither built in this feature:
 Recommendation: ship pagination + lazy-loading first (free); revisit
 real thumbnails only if that's still not enough once there's a real
 event to measure against.
+
+## 6. Mobile breakpoint (US-16)
+
+Manage Event is desktop-first — search, filters, sort, and bulk
+multi-select are built for a mouse/keyboard and a wide grid, and stay
+that way. But an organizer will open the same link on a phone (most
+likely: standing in the room, during or right after the event), and
+"basic functionality" there needs to include the two things a phone is
+actually good for in the moment: catching up on Needs Review, and
+pulling something off the live slideshow. It should **not** include
+Library's search/filter/bulk tools, which don't work well on a touch
+keyboard-less screen at this stage.
+
+This is **one responsive component**, not a separate mobile route or
+app — a narrow-viewport breakpoint (phone width, e.g. Tailwind's `sm:`
+boundary) swaps which controls render, using the same data/queries from
+§1 and the same actions from Feature 002 §2. No forked logic to keep in
+sync.
+
+Below the breakpoint:
+
+- **Banner**: a persistent, dismissible note at the top — "Search,
+  filters, and bulk tools work best on a bigger screen" — so the
+  narrowed Library isn't mistaken for the whole feature missing.
+- **Needs Review**: stays fully functional, but the primary path is the
+  "Review one at a time" flow (§4) — it's already single-column,
+  large-target, and exactly the right shape for a phone. The section
+  shows a couple of pending photos with inline Approve/Reject plus a
+  prominent button into that flow for the rest.
+- **Slideshow**: stays fully functional — this is real-time, in-the-room
+  control (an organizer spotting something on the TV and needing it gone
+  from their phone right now), so it's not something to gate behind
+  "use a bigger screen." Per-card single-tap "Remove from slideshow";
+  bulk multi-select is skipped (a phone doing one photo at a time here is
+  fine — the whole point is this section stays small).
+- **Library**: read-only preview only — a handful of the most recent
+  photos (no actions), total count, and the banner's nudge repeated
+  inline ("Open on a computer to search, filter, or bulk-manage the
+  library"). No search box, no filters, no bulk select on this
+  breakpoint.

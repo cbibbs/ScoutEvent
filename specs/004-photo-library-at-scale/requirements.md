@@ -103,6 +103,26 @@ photo ever approved.
   full-archive search; this section is the fast path for the common
   "what's live right now" task.
 
+### US-16: Usable on a phone, without pretending to be desktop
+
+As an organizer who may open this link on a phone — most likely standing
+in the room during or right after the event — I want Manage Event to
+still let me review photos and manage what's live on the slideshow, so
+I'm not stuck waiting for a computer, while the heavier tools (search,
+filters, bulk actions) stay desktop-first.
+
+- WHEN Manage Event is opened on a phone-width viewport, THE SYSTEM
+  SHALL keep Needs Review and Slideshow fully usable — inline
+  Approve/Reject and a prominent path into "Review one at a time" for
+  Needs Review; per-photo Remove from slideshow for Slideshow.
+- THE SYSTEM SHALL show Library as a read-only summary on a phone-width
+  viewport (recent photos, total count) rather than its full
+  search/filter/sort/bulk toolset.
+- THE SYSTEM SHALL show a persistent, dismissible note on a phone-width
+  viewport that the full toolset is available on a larger screen.
+- THE SYSTEM SHALL NOT require a separate app, route, or link for this —
+  the same Manage Event page adapts to viewport width.
+
 ## Out of scope (this feature)
 
 - Real thumbnails (a second, smaller generated image per photo). Kept
