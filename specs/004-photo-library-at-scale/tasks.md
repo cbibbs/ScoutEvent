@@ -33,8 +33,10 @@ where applicable, verified) — per `specs/CONSTITUTION.md`.
 
 ## Phase 4 — Review one at a time (US-14)
 
-- [ ] T4.1 Focused single-photo review view: Approve/Reject, auto-advance,
-      "N of TOTAL" progress, exit to grid (design §4).
+- [ ] T4.1 Focused single-photo review view: Approve/Reject/Skip,
+      auto-advance, "N of TOTAL" progress pinned to a session snapshot
+      (not live), completion state at session end, exit to grid at any
+      point (design §4).
 
 ## Phase 5 — Verify
 

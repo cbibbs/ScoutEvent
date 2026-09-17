@@ -106,11 +106,30 @@ A focused view, entered from Needs Review's "Review one at a time"
 button, exited back to the grid at any point:
 
 - Reuses the same oldest-first paginated query as the grid; shows one
-  photo at a time, full-size, with Approve/Reject.
-- An action advances to the next pending photo in the already-fetched
-  batch; running past the end of a loaded batch transparently fetches
-  the next page with the same query from §1.
-- Shows "N of TOTAL" using the live pending count from §3.
+  photo at a time, full-size, with Approve/Reject/Skip.
+- **Snapshot, not live.** On open, `sessionTotal` is set once to the
+  pending count at that moment (from §3's count, or the first page's
+  `count`). The "N of TOTAL" progress uses this fixed `sessionTotal` for
+  the session's lifetime — it does **not** grow if more photos are
+  uploaded while the organizer is mid-session. This mirrors §3's
+  INSERT rule for the grid: a new upload never silently reshapes a view
+  already in progress. Practically: the organizer reaches new uploads by
+  exiting and reopening "Review one at a time" (or via the grid), which
+  starts a fresh session with a fresh snapshot.
+- An action (Approve/Reject/Skip) advances to the next pending photo in
+  the already-fetched batch, paging forward with the same query from §1
+  as needed — but **only up to `sessionTotal` items**. Once that many
+  photos have been stepped through, stop advancing even if the
+  underlying query would return more rows (those rows are uploads that
+  arrived after the snapshot, not part of this session).
+- Approve/Reject behave as in Feature 002/003 (same patch, single
+  photo). Skip leaves the photo `pending` and unmodified, and moves to
+  the next photo without counting as decided.
+- **Completion state**: once the organizer has stepped through
+  `sessionTotal` photos, show a completion screen — "Reviewed N of
+  TOTAL" broken down as approved/rejected vs. skipped (e.g. "45
+  decided · 2 skipped — skipped photos are still in Needs Review"), with
+  a single "Back to grid" action. No auto-redirect.
 
 ## 5. Thumbnails — deferred, two options for later
 

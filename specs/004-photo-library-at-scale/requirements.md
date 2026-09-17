@@ -69,9 +69,19 @@ without hunting for tiny buttons in a grid.
 
 - WHEN an organizer opens "Review one at a time" from the Needs Review
   section, THE SYSTEM SHALL show pending photos one at a time, full-size,
-  with Approve/Reject actions that advance to the next pending photo.
+  with Approve/Reject actions that advance to the next pending photo, and
+  a Skip action that leaves the photo pending and moves on without it.
 - THE SYSTEM SHALL show progress (e.g., "12 of 47") and let the
   organizer exit back to the grid view at any point.
+- THE SYSTEM SHALL fix the "of TOTAL" count to the pending count at the
+  moment the organizer opened "Review one at a time." WHEN additional
+  photos are uploaded while a review session is in progress, THE SYSTEM
+  SHALL NOT add them to that session's count or queue — the organizer
+  reaches them by starting a new session.
+- WHEN an organizer reaches the end of the session's photos, THE SYSTEM
+  SHALL show a completion state summarizing how many were
+  approved/rejected vs. skipped, rather than silently returning to the
+  grid.
 
 ## Out of scope (this feature)
 
