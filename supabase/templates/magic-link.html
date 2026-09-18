@@ -1,0 +1,101 @@
+<!--
+  Supabase → Authentication → Email Templates → Magic Link
+
+  Subject line (set separately in that same screen):
+      Your ScoutEvent sign-in link
+
+  Paste the markup below into the message body. `{{ .ConfirmationURL }}`
+  is Supabase's placeholder for the one-time sign-in link.
+
+  Email-client constraints this markup deliberately respects: table
+  layout, inline styles only, no external stylesheet, no web fonts, and
+  no SVG (Gmail and Outlook strip or ignore all of those). Georgia and
+  Helvetica stand in for Fraunces and Work Sans, matching the fallbacks
+  in the app's own font stacks.
+
+  Note the copy says the link expires in about an hour, which is
+  Supabase's default OTP expiry. If you change that under
+  Authentication → Providers → Email, change this wording too — and the
+  matching line on the app's /login page, which tells people what to
+  look for in their inbox.
+-->
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#F6F1E7;margin:0;padding:24px 0;">
+  <tr>
+    <td align="center">
+      <table role="presentation" width="520" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:520px;background-color:#FFFFFF;border:1px solid #EDE6D5;border-radius:12px;overflow:hidden;">
+
+        <!-- Tartan rule, echoing the stripe across the top of every app screen -->
+        <tr>
+          <td>
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="height:5px;line-height:5px;font-size:0;">
+              <tr>
+                <td width="18%" bgcolor="#8C2F39" style="height:5px;">&nbsp;</td>
+                <td width="6%" bgcolor="#C99A3E" style="height:5px;">&nbsp;</td>
+                <td width="18%" bgcolor="#2F4D3A" style="height:5px;">&nbsp;</td>
+                <td width="6%" bgcolor="#C99A3E" style="height:5px;">&nbsp;</td>
+                <td width="18%" bgcolor="#8C2F39" style="height:5px;">&nbsp;</td>
+                <td width="6%" bgcolor="#C99A3E" style="height:5px;">&nbsp;</td>
+                <td width="18%" bgcolor="#2F4D3A" style="height:5px;">&nbsp;</td>
+                <td width="10%" bgcolor="#C99A3E" style="height:5px;">&nbsp;</td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <tr>
+          <td style="padding:32px;">
+
+            <p style="margin:0 0 24px 0;font-family:Georgia,'Times New Roman',serif;font-size:14px;letter-spacing:0.08em;text-transform:uppercase;color:#8A8171;">
+              ScoutEvent
+            </p>
+
+            <h1 style="margin:0 0 12px 0;font-family:Georgia,'Times New Roman',serif;font-size:24px;font-weight:600;color:#26221D;">
+              Sign in to ScoutEvent
+            </h1>
+
+            <p style="margin:0 0 24px 0;font-family:Helvetica,Arial,sans-serif;font-size:15px;line-height:1.5;color:#5B5347;">
+              Tap the button below to sign in as an event organizer, so you
+              can share your event and review the photos guests send in.
+              No password needed.
+            </p>
+
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 24px 0;">
+              <tr>
+                <td bgcolor="#8C2F39" style="border-radius:10px;">
+                  <a href="{{ .ConfirmationURL }}"
+                     style="display:inline-block;padding:14px 28px;font-family:Helvetica,Arial,sans-serif;font-size:16px;font-weight:bold;color:#FFFFFF;text-decoration:none;border-radius:10px;">
+                    Sign in to ScoutEvent
+                  </a>
+                </td>
+              </tr>
+            </table>
+
+            <p style="margin:0 0 8px 0;font-family:Helvetica,Arial,sans-serif;font-size:13px;line-height:1.5;color:#5B5347;">
+              If the button doesn&rsquo;t work, copy and paste this link into
+              your browser:
+            </p>
+            <p style="margin:0 0 24px 0;font-family:Helvetica,Arial,sans-serif;font-size:12px;line-height:1.5;color:#8C2F39;word-break:break-all;">
+              {{ .ConfirmationURL }}
+            </p>
+
+            <p style="margin:0 0 24px 0;font-family:Helvetica,Arial,sans-serif;font-size:13px;line-height:1.5;color:#5B5347;">
+              This link signs in one time and expires in about an hour.
+            </p>
+
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr><td style="border-top:1px solid #EDE6D5;font-size:0;line-height:0;height:1px;">&nbsp;</td></tr>
+            </table>
+
+            <p style="margin:20px 0 0 0;font-family:Helvetica,Arial,sans-serif;font-size:12px;line-height:1.5;color:#8A8171;">
+              You&rsquo;re getting this because someone entered this address on
+              the ScoutEvent sign-in page. If that wasn&rsquo;t you, just ignore
+              this email &mdash; nothing happens until the link is opened, and
+              no account is created.
+            </p>
+
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>

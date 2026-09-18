@@ -28,6 +28,11 @@ I have a dedicated place to collect photos for it.
   and a slideshow link, both derived from the event slug.
 - IF an organizer is not signed in, THE SYSTEM SHALL require sign-in
   before allowing event creation.
+- WHEN a sign-in link has been sent, THE SYSTEM SHALL tell the organizer
+  which address it went to and how to recognize the email in their
+  inbox, including that the sender is the authentication provider rather
+  than ScoutEvent. An organizer who can't tell the sign-in email apart
+  from noise is locked out just as surely as one who never received it.
 - THE SYSTEM SHALL allow an organizer to set an optional upload window
   (start/end date-time) and an optional moderation toggle
   (approve-before-showing).

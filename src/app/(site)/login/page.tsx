@@ -45,9 +45,35 @@ function LoginForm() {
       </p>
 
       {status === "sent" ? (
-        <p className="card p-4 text-sm text-success">
-          Check your inbox for a sign-in link.
-        </p>
+        // Names the sender and subject because the magic link is sent by
+        // Supabase's shared mail service, so it doesn't obviously come
+        // from ScoutEvent. Keep the subject here in step with the one set
+        // on Supabase's Magic Link template (supabase/templates/magic-link.html).
+        <div className="card flex flex-col gap-3 p-5 text-sm">
+          <p className="font-semibold text-success">
+            Sign-in link sent to {email}
+          </p>
+          <p className="text-ink-soft">
+            Look for an email with the subject{" "}
+            <span className="font-semibold text-ink">
+              &ldquo;Your ScoutEvent sign-in link&rdquo;
+            </span>
+            . It&apos;s sent through Supabase, our sign-in provider, so the
+            sender won&apos;t say ScoutEvent.
+          </p>
+          <p className="text-ink-faint">
+            It can take a minute to arrive. If it doesn&apos;t, check your
+            spam folder, or{" "}
+            <button
+              type="button"
+              onClick={() => setStatus("idle")}
+              className="font-semibold text-primary underline"
+            >
+              try a different address
+            </button>
+            .
+          </p>
+        </div>
       ) : (
         <form onSubmit={handleSubmit} className="flex flex-col gap-3">
           <input

@@ -42,6 +42,15 @@ for the reasoning and the full data model.
    `http://localhost:3000` for local dev, plus your Vercel URL once
    deployed) to the redirect allow-list — the magic-link email links back
    to `/auth/callback` on whichever origin sent the sign-in request.
+5. In **Authentication → Email Templates → Magic Link**, set the subject
+   to `Your ScoutEvent sign-in link` and paste in
+   [`supabase/templates/magic-link.html`](supabase/templates/magic-link.html).
+   Out of the box the email arrives with the subject "Magic Link" and no
+   sign of what it's for, which organizers understandably ignore. Note
+   the sender address stays Supabase's until you configure custom SMTP
+   (see below) — the app's sign-in page tells people to expect that.
+   If you change the subject here, change it on `/login` too; the page
+   quotes it so people know what to look for.
 
 ## Running locally
 
@@ -74,8 +83,9 @@ events at a time. Keep an eye on these as usage grows:
 | Limit | Free tier | What happens as you approach it |
 |---|---|---|
 | Supabase database | 500MB | Event/photo metadata is tiny (a few hundred bytes per photo row); this is very unlikely to bind before storage does. |
-| Supabase storage | 1GB | Guest photos are compressed client-side to ~1MB max before upload (see `UploadForm`), so this is roughly 1,000+ photos. Delete old events' photos from the dashboard to free space. |
+| Supabase storage | 1GB | Guest photos are compressed client-side to ~0.6MB max before upload (see `UploadForm`), so this is roughly 1,500+ photos. Delete old events' photos from the dashboard to free space. |
 | Supabase bandwidth | 2GB/mo | Each slideshow view re-downloads photos; a screen left running all day at a busy event is the main driver. Increasing the slideshow interval reduces re-renders (not re-downloads — the browser caches images already shown). |
+| Supabase auth emails | A few per hour on the built-in mail service | This is the one most likely to bite you, because it fails *silently* — the app says "link sent" and the email simply never arrives, which looks like a broken app rather than a throttle. Only organizers ever receive email (guests never sign in), so it's rarely hit, but if several people sign in at once, configure custom SMTP under **Authentication → Settings → SMTP** with any provider's free tier. That also replaces Supabase's sender address with your own, which is the part the Magic Link template can't fix. |
 | Supabase project pause | Auto-pauses after 7 days with no API activity | Sign in / open the dashboard a day or two before your event to make sure the project is awake. Restoring a paused project just takes one dashboard click. |
 | Vercel bandwidth | 100GB/mo (Hobby) | Far above what a photo-collection app for one event needs; only a concern if the app gets wide public use. |
 
@@ -88,6 +98,7 @@ change.
 ```
 specs/                    Requirements/design/tasks (read this first)
 supabase/migrations/      SQL to run once in your Supabase project
+supabase/templates/       Auth email templates to paste into the dashboard
 src/app/(site)/           Landing page, organizer login, dashboard
 src/app/e/[slug]/         Public guest upload + slideshow pages
 src/app/auth/callback/    Magic-link session exchange
