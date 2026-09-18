@@ -6,11 +6,16 @@ model (design §2-3 there).
 
 ## 1. The three modes, and what each actually stores
 
-| Mode | Display copy | Archive copy | Per photo | Photos per free GB |
-|---|---|---|---|---|
-| **Fast** (default) | 1600px, ~0.6MB | — | ~0.6MB | ~1,500 |
-| **Sharp** | 2560px, ~1.5MB | — | ~1.5MB | ~650 |
-| **Archive** | 1600px, ~0.6MB | original, ~3-5MB | ~4-6MB | ~250 |
+| Mode | Display copy (Supabase, 1GB) | Archive copy (R2, 10GB) | Capacity |
+|---|---|---|---|
+| **Fast** (default) | 1600px, ~0.6MB | — | ~1,500 photos |
+| **Sharp** | 2560px, ~1.5MB | — | ~650 photos |
+| **Archive** | 1600px, ~0.6MB | original, ~3-5MB | ~1,500 photos, archives capped by R2 (~2,500 originals) |
+
+The two copies live in **different stores** — see §1a. Display copies
+stay in Supabase Storage where the rest of the app already reads them;
+originals go to Cloudflare R2, whose free tier is 10GB and, critically,
+charges nothing for egress.
 
 Why those pixel numbers, since the organizer-facing wording hides them:
 
@@ -40,6 +45,47 @@ Sizes are tuning constants, not protocol. Note that Sharp roughly
 triples slideshow egress versus Fast, which matters more than storage
 for a screen that runs all day; Fast is the bandwidth-safe choice.
 
+## 1a. Why originals go to R2, not Supabase
+
+Storage is the obvious reason — 10GB against Supabase's 1GB, which is
+already shared with display copies — but it is not the deciding one.
+
+**Egress is.** The entire point of keeping originals is getting them
+back out again, and a bulk download is the largest single transfer this
+app will ever do: 300 archived photos at ~4MB is ~1.2GB, most of
+Supabase's 2GB monthly allowance spent in one click, on the one action
+the archive exists for. An organizer who downloads two events in a month
+would exhaust it. R2 does not charge for egress at all, which turns the
+feature from "technically possible, practically rationed" into something
+an organizer can just use.
+
+**It also settles the privacy question** that §6 would otherwise leave
+open. R2 buckets are private by default and are read through presigned,
+expiring URLs — which is exactly the "private bucket + signed URLs"
+mitigation deferred since Feature 001 §7. Full-resolution photographs of
+children therefore never sit behind nothing but an unguessable URL.
+
+What it costs, stated honestly:
+
+- **A second vendor.** Feature 001 §1 chose one vendor deliberately, for
+  fewer moving parts and fewer free tiers to watch. This spends that on
+  purpose, and only for originals: if R2 is misconfigured, unreachable,
+  or abandoned later, every screen in the app keeps working, because
+  nothing but the download path reads from it.
+- **A server-side signing endpoint** (§3a) — browsers cannot write to R2
+  without a presigned URL, and R2 credentials must never reach the
+  client. This is new surface for an app that has had no backend of its
+  own. A serverless route handler is still nothing to patch or scale, so
+  it bends rather than breaks the constitution's "no app-specific
+  backend to operate", but it is a real change in shape and should be
+  recognized as one.
+- **Verify before committing:** R2 is understood to require a payment
+  method on file even within the free allowance. The constitution
+  forbids *silently* incurring charges, so confirm both that fact and
+  what happens at the 10GB boundary — whether it refuses writes or
+  starts billing — before this ships. If it bills silently, that changes
+  the recommendation.
+
 ## 2. Data model
 
 Additive migration, same approach as Feature 002's:
@@ -56,8 +102,15 @@ alter table public.photos
 ```
 
 `display_bytes` is added alongside because §5 cannot report storage
-usage honestly without knowing the size of every object, and Storage
-does not make that cheap to aggregate after the fact.
+usage honestly without knowing the size of every object, and neither
+store makes that cheap to aggregate after the fact.
+
+`original_path` now holds an **R2 object key**, not a Supabase Storage
+path — the two are never interchangeable, and nothing should construct a
+Supabase public URL from it. Name it for what it is if that ambiguity
+seems likely to bite (`original_r2_key`); the cost of being wrong here
+is a broken download rather than anything dangerous, but the column is
+cheap to name well now and awkward to rename later.
 
 ## 3. Upload sequencing (US-19)
 
@@ -68,10 +121,11 @@ become real before the archive copy is attempted.**
 2. Upload the display copy to `{event_id}/{uuid}.jpg`.
 3. Call `submit_photo()` — the photo now exists, is visible to the
    organizer, and enters the slideshow exactly as fast as it does today.
-4. Only in Archive mode, and only now: upload the untouched original to
-   `originals/{event_id}/{uuid}.jpg`.
-5. Call a new `attach_photo_original()` RPC to record `original_path`
-   and `original_bytes`.
+4. Only in Archive mode, and only now: ask the app's own signing
+   endpoint (§3a) for a presigned R2 upload URL, and PUT the untouched
+   original to it.
+5. Call a new `attach_photo_original()` RPC to record the R2 key and
+   `original_bytes`.
 
 If steps 4 or 5 fail — dropped connection, guest closes the tab, storage
 full — the photo from step 3 is untouched. The UI should show the
@@ -106,6 +160,35 @@ function, so it must not trust its arguments — the same reasoning that
 put upload-window enforcement inside `submit_photo()` rather than in
 client code.
 
+## 3a. The signing endpoint
+
+R2 credentials must never reach the browser, so uploads go through a
+presigned URL minted by a Next.js route handler (e.g.
+`POST /api/originals/sign`). **Guests are anonymous, which makes this
+the most exposed surface in the app** — an ungated presigner is an open
+write endpoint into your bucket, and it must be treated with the same
+suspicion `submit_photo()` already applies to its arguments.
+
+It must, server-side:
+
+- Verify the event exists, that its `photo_quality` is `archive`, and
+  that the upload window is currently open — the same gate
+  `submit_photo()` enforces, not a client claim.
+- **Choose the object key itself** (`originals/{event_id}/{uuid}.jpg`)
+  rather than signing a key the caller supplied. A caller-chosen key is
+  a request to overwrite anything in the bucket.
+- Constrain the signed request: cap `Content-Length` to a sane maximum
+  photo size, pin the content type, and give the URL a short expiry
+  (minutes, not hours).
+- Refuse when the archive is at its ceiling (§5), so the client's stale
+  view of usage is never what decides.
+
+Credentials live in Vercel environment variables (account id, bucket,
+access key id, secret) and are read only inside the route handler.
+R2 also needs a CORS rule permitting `PUT` from the app's origin, which
+is easy to forget and produces a browser-only failure that never appears
+in server logs.
+
 ## 4. Where originals must never be used
 
 State this as a rule because it is easy to violate by accident later:
@@ -117,51 +200,63 @@ original, with each screen using the smallest that will do.
 
 ## 5. Storage accounting and graceful degradation (US-20)
 
-Summing object sizes from Storage on demand is slow and unbounded, which
-is why §2 records the bytes at upload time. Usage per event is then
-`sum(display_bytes) + sum(original_bytes)`, cheap enough to show on the
-manage page beside the existing counts.
+Splitting the stores splits the budget, and the two behave differently
+enough that collapsing them into one "storage used" number would
+mislead:
 
-- Show usage against the free allowance (1GB — a documented constant,
-  not a value the app can discover).
-- Warn the organizer visibly as usage approaches it (~85%).
-- At the ceiling, `attach_photo_original()` stops recording and the
-  client stops attempting step 4 — display copies keep uploading, so the
-  event keeps working and only the archive stops growing. The organizer
-  sees why; the guest sees nothing unusual, because this is not their
-  problem to solve.
+| | Budget | Filled by | Pressure |
+|---|---|---|---|
+| Supabase Storage | 1GB | display copies, every mode | The real constraint — ~1,500 photos across all events |
+| Cloudflare R2 | 10GB | originals, Archive mode only | Roomy — ~2,500 originals, and egress is free |
 
-The check belongs server-side in the RPC as well as client-side, since
-the client's view of usage is necessarily stale.
+Summing object sizes on demand is slow and unbounded in both stores,
+which is why §2 records bytes at upload time. `sum(display_bytes)` and
+`sum(original_bytes)` are then cheap enough to show on the manage page
+beside the existing counts.
 
-## 6. Privacy: this raises the stakes on an accepted tradeoff
+- Show both, labelled by what they mean to the organizer ("photos" vs
+  "archived originals") rather than by vendor.
+- Warn visibly as either approaches its ceiling (~85%).
+- At the Supabase ceiling, uploads genuinely cannot continue — this is
+  the one that breaks an event, and it is why the display side still
+  needs the warning even though the archive side is now roomy.
+- At the R2 ceiling, the signing endpoint (§3a) refuses and the client
+  stops attempting step 4. Display copies keep uploading, so the event
+  carries on and only the archive stops growing. The organizer sees why;
+  the guest sees nothing unusual, because this is not their problem to
+  solve.
+
+Both ceilings are enforced server-side — in the RPC and in the signing
+endpoint — because the client's view of usage is necessarily stale.
+
+## 6. Privacy
 
 Feature 001 accepted a public-read bucket with unguessable UUID paths,
-noting that a rejected photo's file stays fetchable by direct URL until
-deleted, and that organizers should be told not to use it for sensitive
-photos. That tradeoff was made about 1600px display copies.
+noting that a photo's file stays fetchable by direct URL until deleted,
+and that organizers should be told not to use it for sensitive photos.
+That tradeoff was made about 1600px display copies for a proof of
+concept.
 
-Archive mode stores **full-resolution photographs of children** under
-the same policy. The exposure is the same in kind — an unguessable URL,
-never linked — but the consequence of a leaked URL is meaningfully
-worse, and the audience for this app is scouting units.
+Archive mode stores **full-resolution photographs of children**. The
+exposure would have been the same in kind — an unguessable URL, never
+linked — but the consequence of one leaking is meaningfully worse, and
+the audience for this app is scouting units.
 
-This feature does not change the policy, but it should not inherit it
-silently either. Two honest options, and this deserves an explicit
-decision rather than a default:
+Choosing R2 resolves this rather than deferring it. R2 buckets are
+private by default; originals are written through a presigned PUT (§3a)
+and read through a presigned GET that expires. There is no public URL
+for an original, so there is nothing to leak that stays valid. Download
+links must therefore be minted per request and kept short-lived, and
+must never be embedded in a page that gets cached or shared.
 
-1. Ship Archive mode on the current public bucket, and say plainly in
-   the organizer-facing copy what is being stored and under what
-   protection.
-2. Take the deferred "private bucket + signed URLs" item (Feature 001
-   design §7) as a prerequisite for Archive mode specifically, leaving
-   Fast and Sharp on the current arrangement.
-
-Recommendation: option 2 if Archive mode is going to be used for real
-events with youth in frame. The work is bounded — originals are already
-being written to their own path prefix, so making *that* prefix private
-and issuing signed URLs for download is a smaller change than converting
-the whole bucket, and it does not touch the slideshow's hot path at all.
+**Display copies remain public-read on Supabase**, unchanged. That is a
+deliberate, narrower version of the original tradeoff: the 1600px copy
+of a photo already being shown on a screen in a public room is a
+materially smaller exposure than the 12MP original, and moving it would
+mean signing every image in the slideshow and every grid thumbnail —
+touching the hot path this feature has otherwise been careful to leave
+alone. Worth revisiting on its own merits (see the production readiness
+review), but not as a side effect of this feature.
 
 ## 7. Interaction with bulk ZIP download
 

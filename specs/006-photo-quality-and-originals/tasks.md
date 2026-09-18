@@ -3,10 +3,33 @@
 Each task is checked off `[x]` only once actually implemented (and,
 where applicable, verified) — per `specs/CONSTITUTION.md`.
 
-**Blocked on a decision before Phase 3:** design §6 asks whether Archive
-mode ships on the current public-read bucket or waits for a private
-prefix with signed URLs. Fast and Sharp (Phases 1-2) are unaffected and
-can proceed either way.
+**Decision made:** originals go to Cloudflare R2, not Supabase Storage
+(design §1a). That was driven by egress rather than capacity — a bulk
+download of one archived event would consume most of Supabase's monthly
+allowance — and it resolves the privacy question §6 previously left
+open, since R2 is private by default and read through expiring signed
+URLs. Phases 1-2 (Fast and Sharp) touch neither store's arrangement and
+can ship independently of the R2 work.
+
+**One fact to confirm before Phase 0:** whether R2 requires a payment
+method on file within the free allowance, and whether exceeding 10GB
+refuses writes or silently bills. The constitution forbids silently
+incurring charges; if R2 bills silently past the ceiling, revisit
+design §1a rather than proceeding.
+
+## Phase 0 — R2 setup (design §1a)
+
+Only blocks Phase 3. Phases 1-2 can proceed in parallel.
+
+- [ ] T0.1 Confirm the billing question above before doing anything
+      else.
+- [ ] T0.2 Create the R2 bucket (private, no public access), an API
+      token scoped to just that bucket, and a CORS rule permitting `PUT`
+      from the app's origins. The CORS rule is easy to forget and fails
+      only in the browser, never in server logs.
+- [ ] T0.3 Add the credentials to Vercel environment variables and
+      `.env.example`, and document the setup in the README beside the
+      existing Supabase steps.
 
 ## Phase 1 — Schema & settings (US-18)
 
@@ -30,14 +53,19 @@ can proceed either way.
 ## Phase 3 — Originals (US-19)
 
 - [ ] T3.1 `attach_photo_original()` RPC with the write-once, time-window
-      and path guards, plus the server-side storage ceiling check
-      (design §3, §5).
-- [ ] T3.2 Upload sequencing: display copy → `submit_photo()` → original
-      → `attach_photo_original()`, so the photo is live before the
-      archive copy is attempted (design §3).
-- [ ] T3.3 Archive-copy failure is non-fatal and non-alarming — the
+      and path guards, plus the server-side ceiling check (design §3, §5).
+- [ ] T3.2 Signing endpoint (`POST /api/originals/sign`): gate on event
+      exists + mode is `archive` + upload window open, choose the object
+      key server-side, cap content length, pin content type, short
+      expiry, refuse at the ceiling (design §3a). This is the app's most
+      exposed surface — anonymous callers can reach it — so it gets its
+      own review pass.
+- [ ] T3.3 Upload sequencing: display copy → `submit_photo()` →
+      presigned PUT to R2 → `attach_photo_original()`, so the photo is
+      live before the archive copy is attempted (design §3).
+- [ ] T3.4 Archive-copy failure is non-fatal and non-alarming — the
       photo stays, the guest is not shown an error for it (US-19).
-- [ ] T3.4 Audit that no screen loads `original_path`: slideshow, review
+- [ ] T3.5 Audit that no screen loads `original_path`: slideshow, review
       queue, one-at-a-time, and all library grids stay on
       `storage_path` (design §4).
 
@@ -71,5 +99,6 @@ can proceed either way.
 - [ ] Bulk ZIP download (deferred since Feature 001 §7) — originals are
       only worth keeping if there's a way to get them out; schedule with
       this (design §7).
-- [ ] Private prefix + signed URLs for originals, if design §6's
-      recommendation is accepted.
+- [x] Private storage + signed URLs for originals — resolved by choosing
+      R2 (design §1a, §6). Originals are private by construction; only
+      the public-read display copies remain on the Feature 001 tradeoff.

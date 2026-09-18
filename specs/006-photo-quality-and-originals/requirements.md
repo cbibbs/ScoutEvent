@@ -72,7 +72,9 @@ is using before it runs out, so uploads don't start failing during an
 event.
 
 - THE SYSTEM SHALL show the organizer how much storage this event's
-  photos are using, and how much of the free allowance remains.
+  photos are using, and how much of the free allowance remains, for
+  photos and for archived originals separately — they are held under
+  different allowances and fill at very different rates (design.md §5).
 - WHEN stored photos approach the free-tier limit, THE SYSTEM SHALL warn
   the organizer plainly, while uploads still work.
 - IF the limit is reached, THE SYSTEM SHALL stop saving new originals
@@ -91,8 +93,10 @@ event.
   scheduled together.
 - **Recovering quality for photos already uploaded.** Impossible — the
   original never left the phone.
-- **Private storage + signed URLs.** Unchanged from Feature 001's
-  accepted tradeoff, but see design.md §6: full-resolution photographs
-  of children raise the stakes on that tradeoff, and it deserves a
-  decision of its own rather than being quietly inherited.
+- **Making display copies private.** Originals are private by
+  construction under this design (design.md §6 — they live in R2 and are
+  only ever reachable through short-lived signed URLs). The 1600px
+  display copies stay public-read on Supabase, which is the existing
+  Feature 001 tradeoff narrowed to its smaller case. Worth revisiting,
+  but on its own merits rather than as a side effect of this feature.
 - Per-guest or per-photo quality choices. One setting per event.
