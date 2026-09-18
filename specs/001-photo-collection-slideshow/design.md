@@ -1,8 +1,14 @@
 # Design: Event Photo Collection & Slideshow
 
-Traces to `requirements.md` in this directory. Every third-party
-service choice must satisfy the "zero recurring cost" constraint in
-`specs/CONSTITUTION.md`.
+Traces to `requirements.md` in this directory.
+
+> **Superseded in part.** The stack, storage and access-control
+> decisions in §1 and §3 below were project-wide decisions that lived
+> here only because this was once the only feature. They have been
+> promoted to `specs/PROJECT.md`, which is authoritative where the two
+> disagree. This document stays as Feature 001's record — later specs
+> cite its section numbers, so it is deliberately left intact rather
+> than gutted.
 
 ## 1. Stack choice
 
