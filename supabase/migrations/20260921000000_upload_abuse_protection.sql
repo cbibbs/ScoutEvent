@@ -1,7 +1,7 @@
 -- Bounds how much any one event can upload and lets the organizer stop
 -- uploads in one action.
--- Implements specs/007-upload-abuse-protection/design.md §2, §3 and §5.
--- Additive on top of 20260913000000_init.sql and
+-- Implements specs/007-upload-abuse-protection/design.md §2, §3, §4 and
+-- §5. Additive on top of 20260913000000_init.sql and
 -- 20260914000000_slideshow_curation.sql (both already applied to the
 -- live project) — run this once after those.
 
@@ -171,3 +171,39 @@ create policy "organizers delete their event photo files"
         and e.organizer_id = auth.uid()
     )
   );
+
+-- ---------------------------------------------------------------------
+-- Bucket file size limit (design.md §3 — corrected after review).
+-- storage.buckets is an ordinary table (Feature 001's migration already
+-- inserts into it), so this belongs in the SQL everything else is
+-- applied with, not a dashboard click someone has to remember for a
+-- named mitigation. 8MB is headroom above what the compression pipeline
+-- produces (~0.6MB as of Feature 001; Feature 006's Sharp mode is still
+-- comfortably under this). README.md documents this as what the
+-- migration does, not as a separate action to take.
+-- ---------------------------------------------------------------------
+
+update storage.buckets
+  set file_size_limit = 8 * 1024 * 1024
+  where id = 'photos';
+
+-- ---------------------------------------------------------------------
+-- Realtime for events (design.md §5 — corrected after review). The 30s
+-- poll alone is too slow for Stop: the window's effect is recomputed
+-- against the clock every slide tick, but a pause can only be *learned*,
+-- so on the poll alone the projector could keep inviting scans for up to
+-- thirty seconds after the organizer hits Stop — while they stand there
+-- watching it not work, which is the exact scenario US-23 exists for.
+-- The slideshow subscribes to its own event row so a pause lands in
+-- about as long as an approval does; the poll stays as the self-healing
+-- fallback, same as it already is for photos. Anonymous clients can
+-- already read all of `events` (the existing "events are viewable by
+-- everyone" policy), so this exposes nothing new.
+-- ---------------------------------------------------------------------
+
+do $$
+begin
+  alter publication supabase_realtime add table public.events;
+exception
+  when duplicate_object then null;
+end $$;

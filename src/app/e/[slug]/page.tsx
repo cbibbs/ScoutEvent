@@ -87,7 +87,7 @@ export default async function GuestUploadPage({
             know.
           </p>
         ) : (
-          <UploadForm eventId={event.id} photoLimit={event.photo_limit} />
+          <UploadForm eventId={event.id} />
         )}
 
         <Link

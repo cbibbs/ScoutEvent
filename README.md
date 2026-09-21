@@ -39,17 +39,19 @@ for the reasoning and the full data model.
    creates the `events`/`photos` tables, their Row Level Security
    policies, the `submit_photo()` function guests use to upload, and the
    public `photos` storage bucket. Later ones are additive on top of it.
-3. Set a **file size limit on the `photos` storage bucket** so an
-   oversized object is refused by Supabase Storage itself, not only by
-   the browser upload form (`UploadForm` already rejects anything over
-   15MB client-side, which anything calling Storage directly can ignore —
-   specs/007-upload-abuse-protection/design.md §3). In the dashboard:
-   **Storage → photos → Edit bucket → File size limit**, set a few MB of
-   headroom above what the compression pipeline produces (`UploadForm`
-   compresses to ~0.6MB before upload as of this writing). This isn't
-   part of the SQL migrations because it's a bucket-level setting, not a
-   database object — set it once per project, same as the bucket's public
-   flag.
+3. The `photos` storage bucket gets an 8MB **file size limit**, set by
+   `20260921000000_upload_abuse_protection.sql` via `update
+   storage.buckets set file_size_limit = ...` — so an oversized object is
+   refused by Supabase Storage itself, not only by the browser upload
+   form (`UploadForm` already rejects anything over 15MB client-side,
+   which anything calling Storage directly can ignore —
+   specs/007-upload-abuse-protection/design.md §3). `storage.buckets` is
+   an ordinary table, so this is set by the migration you already ran in
+   step 2, not a separate dashboard click to remember; this step is just
+   documenting what that migration does. (To change the limit later,
+   either edit and re-run that `update` statement or use **Storage →
+   photos → Edit bucket → File size limit** in the dashboard — both write
+   the same column.)
 4. In **Project Settings → API**, copy the **Project URL** and the
    **anon public** key.
 5. In **Authentication → URL Configuration**, add your app's URL (e.g.

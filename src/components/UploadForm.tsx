@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import imageCompression from "browser-image-compression";
 import { createClient } from "@/lib/supabase/client";
+import { uploadWindowState } from "@/lib/uploadWindow";
 
 const MAX_ORIGINAL_SIZE_MB = 15;
 
@@ -42,13 +43,7 @@ interface QueuedFile {
   retryable?: boolean;
 }
 
-export function UploadForm({
-  eventId,
-  photoLimit,
-}: {
-  eventId: string;
-  photoLimit: number;
-}) {
+export function UploadForm({ eventId }: { eventId: string }) {
   const supabase = useMemo(() => createClient(), []);
   const [uploaderName, setUploaderName] = useState("");
   const [queue, setQueue] = useState<QueuedFile[]>([]);
@@ -85,23 +80,61 @@ export function UploadForm({
       });
 
       // Advisory only — enforcement stays in submit_photo() below, which
-      // is the only thing that can't be raced or skipped. This just keeps
-      // the *common* case (an event that's already full) from ever
-      // creating a Storage object that submit_photo() will immediately
-      // refuse to attach a row to, which would otherwise leak an orphan
-      // no one can reach (design.md §3, T6.4). A stale/approximate count
-      // here is accepted — see submit_photo()'s own check for the real
-      // gate.
-      const { data: currentCount } = await supabase.rpc("event_photo_count", {
-        p_event_id: eventId,
-      });
-      if (typeof currentCount === "number" && currentCount >= photoLimit) {
-        updateFile(id, {
-          status: "error",
-          error: EVENT_FULL_MESSAGE,
-          retryable: false,
-        });
-        return;
+      // is the only thing that can't be raced or skipped and the only
+      // thing allowed to mark a refusal non-retryable (design.md §3). This
+      // just keeps the *common* case (an event that's already closed,
+      // paused, or full) from ever creating a Storage object that
+      // submit_photo() will immediately refuse to attach a row to, which
+      // would otherwise leak an orphan no one can reach (T6.4, T7.3).
+      //
+      // Fetches the event's window/pause/limit fresh here rather than
+      // trusting a value captured at page load: an earlier version
+      // compared this live count against a `photoLimit` prop from page
+      // load, so raising an event's limit mid-event — the US-22 recovery
+      // path — left every guest already on the page refused against the
+      // stale number, told the event was full, with no retry offered
+      // despite the server now being willing to accept them. Advisory may
+      // be weaker than the enforcement point behind it, never stricter
+      // (design.md §3, T7.2).
+      const [{ data: currentCount }, { data: freshEvent }] = await Promise.all(
+        [
+          supabase.rpc("event_photo_count", { p_event_id: eventId }),
+          supabase
+            .from("events")
+            .select("upload_starts_at, upload_ends_at, uploads_paused, photo_limit")
+            .eq("id", eventId)
+            .maybeSingle<{
+              upload_starts_at: string | null;
+              upload_ends_at: string | null;
+              uploads_paused: boolean;
+              photo_limit: number;
+            }>(),
+        ],
+      );
+      if (freshEvent) {
+        const { notOpenYet, closed } = uploadWindowState(
+          freshEvent.upload_starts_at,
+          freshEvent.upload_ends_at,
+        );
+        if (notOpenYet || closed || freshEvent.uploads_paused) {
+          // Not `retryable: false` — this could still legitimately open
+          // while the guest has the page open, same as the server's own
+          // refusal for this case (design.md §6).
+          updateFile(id, { status: "error", error: CLOSED_MESSAGE });
+          return;
+        }
+        const full =
+          typeof currentCount === "number" &&
+          typeof freshEvent.photo_limit === "number" &&
+          currentCount >= freshEvent.photo_limit;
+        if (full) {
+          // Not `retryable: false` here either — only submit_photo()'s own
+          // refusal may set that (design.md §3). This check just compared
+          // live-against-live a moment ago; the two-request round trip is
+          // still enough of a gap that the real gate gets the final word.
+          updateFile(id, { status: "error", error: EVENT_FULL_MESSAGE });
+          return;
+        }
       }
 
       updateFile(id, { status: "uploading" });
@@ -127,12 +160,15 @@ export function UploadForm({
       });
 
       if (rpcError) {
-        // Clean up the orphaned storage object if the DB row couldn't be
-        // created (e.g. uploads just closed/paused for this event, or the
-        // event is full). Still needed here even with the pre-check above:
-        // that check is advisory, and the window/pause state can change in
-        // the moment between it and this call.
-        await supabase.storage.from("photos").remove([storagePath]);
+        // submit_photo() refused (uploads closed/paused for this event,
+        // or the event is full), which leaves an orphaned object behind —
+        // the pre-check above catches the common case but this one can
+        // still race it. There is deliberately no attempt here to delete
+        // it: anon has no DELETE policy on storage.objects, so the call
+        // would fail silently every time and this comment would be lying
+        // about what it does (design.md §3). Cleanup for an orphan is the
+        // organizer's job now that their DELETE policy covers objects
+        // without a matching `photos` row too (T6.5).
         const isFull = rpcError.message.includes(EVENT_FULL_ERROR);
         const isClosed = CLOSED_ERRORS.some((m) =>
           rpcError.message.includes(m),

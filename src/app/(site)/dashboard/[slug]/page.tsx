@@ -76,7 +76,6 @@ export default async function ManageEventPage({
         <h1 className="font-display text-2xl">{event.name}</h1>
         <div className="mt-2 flex flex-wrap items-center gap-3 text-[13.5px] text-ink-soft">
           {event.event_date && <span>{event.event_date}</span>}
-          <span>{totalRes.count ?? 0} photos total</span>
           <span className="font-semibold text-secondary-dark">
             {slideshowRes.count ?? 0} in slideshow
           </span>
@@ -88,6 +87,10 @@ export default async function ManageEventPage({
         </div>
       </div>
 
+      {/* The total-photos figure lives here, live on its own poll, rather
+          than also appearing frozen in the header above — one number, one
+          source, or the two disagree from the first upload onward
+          regardless of which is "right" (design.md §7). */}
       <UploadStatusControl
         eventId={event.id}
         initialUploadStartsAt={event.upload_starts_at}

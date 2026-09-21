@@ -28,9 +28,13 @@ where applicable, verified) — per `specs/CONSTITUTION.md`.
       same way as the two prior migrations.
 - [ ] T1.4 Set a `file_size_limit` on the `photos` bucket so oversized
       objects are refused by the storage layer, not only by the browser
-      (design §3). **Not done** — bucket-level dashboard/API setting, out
-      of reach without dashboard access in this session. Documented in
-      README.md ("Setting up Supabase", step 3).
+      (design §3). **Superseded by T7.4**: `storage.buckets` is an
+      ordinary table, so this is now an `update storage.buckets set
+      file_size_limit = ...` statement in
+      `20260921000000_upload_abuse_protection.sql` itself, not a
+      dashboard click — see T7.4. Still blocked on T1.3 (nothing in that
+      migration is applied yet); README.md ("Setting up Supabase", step
+      3) documents it as what the migration does.
 
 ## Phase 2 — Gate the join QR on moderation (US-21)
 
@@ -230,44 +234,112 @@ T7.1 is the serious one: as it stands, deploying this code before the
 migration is applied leaves an organizer with **no way to stop uploads
 at all** — strictly worse than not deploying it.
 
-- [ ] T7.1 Tolerate the migration not being applied, per the new rule in
-      `specs/PROJECT.md`. Specifically: `EventSettingsForm` must not
-      reject an entire save because `photo_limit` is absent (today that
-      blocks editing `upload_ends_at`, which was the only pre-007 way to
-      close uploads); the QR's fullness term must not fire when the
-      limit is unknown (`0 < undefined` is `false`, which silently hides
-      the QR on every event); and the Stop control must fail
-      intelligibly rather than surfacing a raw PostgREST error. Absent
-      is not invalid.
-- [ ] T7.2 The pre-upload check must never be stricter than
-      `submit_photo()` (design §3). Compare a live count against a live
-      limit, and never let the pre-check mark a refusal non-retryable —
-      only the server's own refusal may. Today, raising the limit
-      mid-event leaves every guest with the page already open refused
-      against the old limit, with no retry.
-- [ ] T7.3 Extend that pre-check to the window and pause states too —
-      they leak orphans by the same path and the event state is already
-      being fetched (design §3).
-- [ ] T7.4 Set the bucket `file_size_limit` in the migration via
-      `update storage.buckets`, not by a dashboard click (design §3).
-      This closes T1.4 properly; keep the README text as documentation.
-- [ ] T7.5 Stop lands on the projector via realtime, not only the 30s
-      poll — add `events` to the publication and subscribe (design §5).
-      An emergency control that takes half a minute to visibly work
-      fails its own premise.
-- [ ] T7.6 One photo count on the manage page, not a live one beside a
-      frozen one; and take the poll interval from
-      `components/manage/constants` rather than redeclaring it
-      (design §7).
-- [ ] T7.7 The guest's `storage.remove()` after a failed `submit_photo()`
-      cannot work for anonymous callers and never could. Drop it or
-      comment it truthfully — it must not claim to clean up (design §3).
-- [ ] T7.8 Ignore a poll response that started before the most recent
-      local Stop/Resume write, so the control can't briefly show an
-      emergency stop as undone.
-- [ ] T7.9 The at-limit message should say that deleting photos frees
-      capacity, not only that the limit can be raised — rejecting does
-      not help, since the cap counts every status (design §7).
+- [x] T7.1 Tolerate the migration not being applied, per the new rule in
+      `specs/PROJECT.md`. Three separate fixes:
+      - `EventSettingsForm` now tracks `photoLimitKnown =
+        typeof event.photo_limit === "number"`, only validates the field
+        when known, and spreads `photo_limit` into the update payload
+        conditionally rather than always including it — so a save with
+        nothing to do with the photo limit no longer fails when the
+        column doesn't exist. The input itself is disabled with an
+        explanatory note when unknown, rather than silently discarding
+        an edit that looks like it saved.
+      - `Slideshow`'s fullness term is now `typeof photoLimit ===
+        "number" && photoCount >= photoLimit`, so "unknown" reads as
+        "not full" (QR shown) rather than as "full" (QR hidden) —
+        matching what Feature 005 already shipped before this feature
+        existed.
+      - `UploadStatusControl`'s Stop/Resume now catches the PostgREST
+        error for a missing column and shows "Stop/Resume isn't
+        available yet — this event needs a database update first."
+        instead of the raw error.
+
+      **Live-verified against the actual unmigrated project this round**
+      (not just reasoned about, per the explicit instruction):
+      - Direct `curl PATCH .../events` with `{"uploads_paused": true}`
+        against the real project returns
+        `{"code":"PGRST204","message":"Could not find the
+        'uploads_paused' column ... in the schema cache"}` — this is
+        what the Stop-control fix actually catches; the code originally
+        written for this checked Postgres's `42703` instead, which is
+        what a `SELECT` naming a missing column returns, not what a
+        PATCH body validated against PostgREST's schema cache returns.
+        Caught and fixed *because* this was actually run against the
+        live project rather than assumed — the guard now checks both
+        codes.
+      - Direct `curl PATCH .../events` with the exact payload
+        `EventSettingsForm` sends when `photo_limit` is omitted (name,
+        dates, moderation, interval — no `photo_limit` key) against the
+        real project returns `204 No Content`, confirming the omission
+        genuinely avoids the whole-save failure.
+      - Restarted the dev server against the live project and reloaded
+        both slideshow pages: `/e/live-review-test-e89d69/slideshow`
+        (moderation on) now shows the QR again (it did not, before this
+        fix, due to exactly the `0 < undefined` bug);
+        `/e/wood-badge-8a1dcb/slideshow` (moderation off) still correctly
+        shows no QR. Guest pages for both still render the upload form,
+        not a false "closed"/"full" state. No server-side errors in the
+        dev log.
+      - Still not exercised: actually clicking Stop/Resume or saving
+        Settings as a signed-in organizer, which needs an authenticated
+        session this session doesn't have (magic-link email). The
+        `curl`/live-render checks above are the closest available
+        substitute and cover the specific failure modes T7.1 describes.
+- [x] T7.2 The pre-upload check must never be stricter than
+      `submit_photo()` (design §3). `UploadForm` no longer takes a
+      `photoLimit` prop; it fetches the event's current `photo_limit`
+      fresh (alongside the live count) at the moment of the check, and no
+      longer sets `retryable: false` from this path at all — only
+      `submit_photo()`'s own refusal (the `rpcError` branch) can do that.
+      Not re-verified live end-to-end (would need two organizer actions —
+      raise the limit mid-upload — plus a guest session; not achievable
+      without auth in this session), but the specific defect described
+      (comparing live against a page-load snapshot) is gone by
+      construction: there is no longer a page-load snapshot to compare
+      against.
+- [x] T7.3 Extend that pre-check to the window and pause states too
+      (design §3). Same fetch now also checks `upload_starts_at`,
+      `upload_ends_at`, and `uploads_paused`, short-circuiting to the
+      shared "closed" copy before ever touching Storage — also without
+      setting `retryable: false`, since these could legitimately reopen.
+- [x] T7.4 Set the bucket `file_size_limit` in the migration via
+      `update storage.buckets set file_size_limit = 8 * 1024 * 1024
+      where id = 'photos'`, not by a dashboard click (design §3). Closes
+      T1.4 properly, pending T1.3. README updated to describe this as
+      what the migration does rather than a separate action.
+- [x] T7.5 Stop lands on the projector via realtime, not only the 30s
+      poll (design §5). Migration adds `events` to the `supabase_realtime`
+      publication (same guarded `do $$ ... exception when duplicate_object
+      ...` pattern already used for `photos`); `Slideshow` subscribes to
+      `postgres_changes` on its own event row (`id=eq.${eventId}`) and
+      applies the same state updates the poll does. Not live-verified —
+      needs the migration applied (there's nothing in the publication to
+      subscribe to yet) and a way to trigger an UPDATE, which needs
+      organizer auth.
+- [x] T7.6 One photo count on the manage page, not a live one beside a
+      frozen one (design §7). Removed the frozen `{totalRes.count} photos
+      total` from the page header — `UploadStatusControl` right below it
+      already renders the same number, live. `Slideshow` and
+      `UploadStatusControl` both now import `POLL_FALLBACK_MS` from
+      `@/components/manage/constants` instead of each redeclaring their
+      own `30_000`.
+- [x] T7.7 The guest's `storage.remove()` after a failed `submit_photo()`
+      cannot work for anonymous callers and never could (design §3).
+      Dropped the call; the comment in its place says why (no anon DELETE
+      policy on `storage.objects`) rather than claiming to clean up.
+- [x] T7.8 Ignore a poll response that started before the most recent
+      local Stop/Resume write (design §7). `UploadStatusControl` now
+      captures a `writeVersionRef` value before each poll fetch and
+      before each Stop/Resume write; a poll response is only applied if
+      the version is unchanged, so a write that starts mid-flight
+      invalidates whatever the in-flight poll is about to return. Not
+      live-verified (would need to actually race a poll against a click,
+      which needs the organizer session), but this is a straightforward,
+      self-contained concurrency fix — reviewable by inspection.
+- [x] T7.9 The at-limit message should say that deleting photos frees
+      capacity, not only that the limit can be raised (design §7).
+      `UploadStatusControl`'s at-limit copy is now "event is full. Delete
+      photos to free capacity, or raise the limit in Settings."
 
 ## Deliberately not built (requirements.md "Out of scope")
 

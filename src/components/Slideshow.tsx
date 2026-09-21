@@ -4,9 +4,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { createClient } from "@/lib/supabase/client";
 import { computeUploadsOpen } from "@/lib/uploadWindow";
+import { POLL_FALLBACK_MS } from "@/components/manage/constants";
 import type { Event, Photo } from "@/lib/supabase/types";
-
-const POLL_FALLBACK_MS = 30_000;
 
 // The QR card scales with the display rather than staying a fixed pixel
 // box (design.md §3). A vw/px clamp() looked like it scaled but actually
@@ -146,6 +145,46 @@ export function Slideshow({
     };
   }, [eventId, supabase]);
 
+  // Realtime for the event row itself (design.md §5 — corrected after
+  // review). The window's effect is recomputed against the clock on
+  // every slide tick, so a schedule change lands within a slide either
+  // way — but a pause can only be *learned*, and on the 30s poll alone
+  // the projector could keep inviting scans for up to thirty seconds
+  // after the organizer hits Stop, while they stand there watching it
+  // not work. That's the exact scenario US-23 exists for, so this
+  // subscribes to the same row the poll below re-reads; the poll stays
+  // as the self-healing fallback if realtime silently drops, exactly as
+  // it already does for photos.
+  useEffect(() => {
+    const channel = supabase
+      .channel(`event-${eventId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "events",
+          filter: `id=eq.${eventId}`,
+        },
+        (payload) => {
+          const row = payload.new as PolledEventFields | undefined;
+          if (!row) return;
+          uploadWindowRef.current = row;
+          setUploadsOpen(
+            computeUploadsOpen(row.upload_starts_at, row.upload_ends_at),
+          );
+          setModerationEnabled(row.moderation_enabled);
+          setUploadsPaused(row.uploads_paused);
+          setPhotoLimit(row.photo_limit);
+        },
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [eventId, supabase]);
+
   // Self-healing poll in case the realtime subscription silently drops on
   // a screen left running for hours (design.md §6). Also re-reads the
   // event's upload window alongside the photos, so an organizer
@@ -228,8 +267,18 @@ export function Slideshow({
   // same reasoning Feature 005 already gives for the closed window.
   // Derived once here so the QR card and the caption's reserved padding
   // below can never drift out of sync with each other.
-  const qrVisible =
-    uploadsOpen && !uploadsPaused && moderationEnabled && photoCount < photoLimit;
+  //
+  // `photoLimit` reads as `undefined` at runtime if Feature 007's
+  // migration hasn't been applied yet, even though the type says
+  // `number`. A bare `photoCount < photoLimit` would then be `0 <
+  // undefined`, always `false` — silently hiding the QR on every event
+  // regardless of the real moderation/window state, which takes away
+  // capability Feature 005 already shipped. Explicit `typeof` check so
+  // "unknown" fails toward the pre-existing behavior (QR shown) rather
+  // than toward the new one (QR hidden) — specs/PROJECT.md, "Migrations
+  // and deploy order".
+  const full = typeof photoLimit === "number" && photoCount >= photoLimit;
+  const qrVisible = uploadsOpen && !uploadsPaused && moderationEnabled && !full;
 
   // The encoded value is constant for the life of the page — resolved
   // server-side from the request (design.md §1), not

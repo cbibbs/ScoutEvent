@@ -1,11 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { uploadWindowState } from "@/lib/uploadWindow";
+import { POLL_FALLBACK_MS } from "@/components/manage/constants";
 import type { Event } from "@/lib/supabase/types";
-
-const POLL_MS = 30_000;
 
 type PolledFields = Pick<
   Event,
@@ -53,10 +52,18 @@ export function UploadStatusControl({
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Bumped every time a local Stop/Resume write starts, and compared
+  // against on every poll response before it's applied — a poll that was
+  // already in flight when the organizer clicked Stop must not land
+  // afterwards with the old (pre-write) value and briefly show the
+  // emergency stop as undone (design.md §7).
+  const writeVersionRef = useRef(0);
+
   // The organizer already has full RLS visibility on their own event's
   // photos (unlike the anonymous guest/slideshow pages), so a plain count
   // query is accurate here — no need for the event_photo_count() RPC.
   const refresh = useCallback(async () => {
+    const version = writeVersionRef.current;
     const [{ data: freshEvent }, { count: freshCount }] = await Promise.all([
       supabase
         .from("events")
@@ -68,6 +75,7 @@ export function UploadStatusControl({
         .select("id", { count: "exact", head: true })
         .eq("event_id", eventId),
     ]);
+    if (version !== writeVersionRef.current) return;
     if (freshEvent) {
       setUploadStartsAt(freshEvent.upload_starts_at);
       setUploadEndsAt(freshEvent.upload_ends_at);
@@ -80,15 +88,22 @@ export function UploadStatusControl({
   useEffect(() => {
     const id = setInterval(() => {
       void refresh();
-    }, POLL_MS);
+    }, POLL_FALLBACK_MS);
     return () => clearInterval(id);
   }, [refresh]);
 
   const { notOpenYet, closed } = uploadWindowState(uploadStartsAt, uploadEndsAt);
-  const atLimit = photoCount >= photoLimit;
-  const nearLimit = !atLimit && photoCount >= photoLimit * 0.9;
+  // `photoLimit` reads as `undefined` at runtime if this feature's
+  // migration hasn't been applied yet, even though the type says
+  // `number` (specs/PROJECT.md, "Migrations and deploy order"). Guarded
+  // so this renders "N photos" rather than "N / undefined photos", and
+  // never claims "full" when there's nothing to compare against.
+  const photoLimitKnown = typeof photoLimit === "number";
+  const atLimit = photoLimitKnown && photoCount >= photoLimit;
+  const nearLimit = photoLimitKnown && !atLimit && photoCount >= photoLimit * 0.9;
 
   async function togglePaused() {
+    writeVersionRef.current += 1;
     setPending(true);
     setError(null);
     const nextPaused = !paused;
@@ -98,7 +113,23 @@ export function UploadStatusControl({
       .eq("id", eventId);
     setPending(false);
     if (updateError) {
-      setError(updateError.message);
+      // PGRST204 ("Could not find the 'uploads_paused' column ... in the
+      // schema cache") is what PostgREST actually returns for a
+      // write to a column it doesn't know about yet — verified directly
+      // against the live, unmigrated project rather than assumed; a
+      // plain SELECT naming a missing column errors with Postgres's own
+      // 42703 instead, but PATCH bodies are validated against PostgREST's
+      // schema cache before a query is even built, so that's not the
+      // error this call can produce. Either way this means the database
+      // update for this feature hasn't been applied yet, which must read
+      // as a stalled feature, not surface Postgres/PostgREST internals to
+      // someone trying to stop uploads mid-event (specs/PROJECT.md,
+      // "Migrations and deploy order").
+      setError(
+        updateError.code === "PGRST204" || updateError.code === "42703"
+          ? "Stop/Resume isn't available yet — this event needs a database update first."
+          : updateError.message,
+      );
       return;
     }
     setPaused(nextPaused);
@@ -128,9 +159,13 @@ export function UploadStatusControl({
                   : undefined
             }
           >
-            {photoCount} / {photoLimit} photos
+            {photoLimitKnown ? `${photoCount} / ${photoLimit} photos` : `${photoCount} photos`}
           </span>
-          {atLimit && " — event is full, raise the limit in Settings to allow more"}
+          {atLimit &&
+            // Rejecting doesn't free capacity — the cap counts rows of
+            // every status — so "raise the limit" alone steers away from
+            // the remedy that costs nothing (design.md §7).
+            " — event is full. Delete photos to free capacity, or raise the limit in Settings."}
         </p>
         {error && <p className="mt-1 text-sm text-danger">{error}</p>}
       </div>

@@ -29,6 +29,13 @@ export function EventSettingsForm({ event }: { event: Event }) {
   const [slideshowInterval, setSlideshowInterval] = useState(
     event.slideshow_interval_seconds,
   );
+  // `event.photo_limit` reads as `undefined` at runtime if Feature 007's
+  // migration hasn't been applied yet, even though the type says
+  // `number` — Postgres just never sent the column back. Tracked
+  // separately from a plain "is it falsy" check so the rest of this
+  // form can tell "not yet migrated" apart from "the organizer typed 0"
+  // (specs/PROJECT.md, "Migrations and deploy order"; design.md §2/§3).
+  const photoLimitKnown = typeof event.photo_limit === "number";
   const [photoLimit, setPhotoLimit] = useState(event.photo_limit);
   const [status, setStatus] = useState<"idle" | "saving" | "saved" | "error">(
     "idle",
@@ -45,7 +52,15 @@ export function EventSettingsForm({ event }: { event: Event }) {
     // from submitting. Refuse client-side rather than letting that save a
     // limit that makes the event permanently full; the DB check
     // constraint is the backstop, not the only guard (design.md §2).
-    if (!Number.isFinite(photoLimit) || photoLimit < 1) {
+    //
+    // Only validated (and only sent) when the column is actually known to
+    // exist. Absent is not invalid: before this validation existed, this
+    // form's only job for stopping uploads was editing `upload_ends_at`,
+    // and a migration not being applied yet must never take that away —
+    // an `undefined` limit failing this guard would refuse *every* save,
+    // including one that has nothing to do with the photo limit
+    // (specs/PROJECT.md, "Migrations and deploy order").
+    if (photoLimitKnown && (!Number.isFinite(photoLimit) || photoLimit < 1)) {
       setStatus("error");
       setError("Photo limit must be at least 1.");
       return;
@@ -65,7 +80,10 @@ export function EventSettingsForm({ event }: { event: Event }) {
           : null,
         moderation_enabled: moderationEnabled,
         slideshow_interval_seconds: slideshowInterval,
-        photo_limit: photoLimit,
+        // Omitted entirely (not sent as `undefined`) when the column
+        // isn't known to exist yet — writing a key Postgres doesn't have
+        // would fail the whole update, not just this field.
+        ...(photoLimitKnown ? { photo_limit: photoLimit } : {}),
       })
       .eq("id", event.id);
 
@@ -141,14 +159,15 @@ export function EventSettingsForm({ event }: { event: Event }) {
         <input
           type="number"
           min={1}
-          value={photoLimit}
+          value={photoLimitKnown ? photoLimit : ""}
+          disabled={!photoLimitKnown}
           onChange={(e) => setPhotoLimit(Number(e.target.value))}
           className="input w-32"
         />
         <span className="mt-1 text-[13px] text-ink-soft">
-          Guests can&apos;t upload past this many photos. Raise it here if a
-          real event legitimately hits the cap — it never has to be dead in
-          the water mid-occasion.
+          {photoLimitKnown
+            ? "Guests can't upload past this many photos. Raise it here if a real event legitimately hits the cap — it never has to be dead in the water mid-occasion."
+            : "Not available on this event yet — a database update for this feature hasn't been applied. Everything else on this form still saves normally."}
         </span>
       </label>
 
