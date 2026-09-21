@@ -74,6 +74,37 @@ across every feature and should keep holding:
 | R2 egress | unmetered | The reason it was chosen |
 | Vercel bandwidth | 100GB/mo (Hobby) | Far above need |
 
+## Migrations and deploy order
+
+Migrations are applied by hand in the Supabase SQL Editor, and the code
+is deployed separately to Vercel. There is therefore always a window
+where one has landed and the other hasn't, and it is usually the code
+that goes first because deploying is the easier action.
+
+**Code must tolerate its own migration not being applied yet, and must
+never remove capability that existed before it.** Degrading a new
+feature to "not working yet" is acceptable. Taking away something that
+worked yesterday is not — and it is easy to do by accident, because a
+missing column reads as `undefined` and flows into validation and
+boolean logic as though it were a value.
+
+This is not hypothetical. Feature 007 added a guard rejecting a
+non-numeric `photo_limit`; with the column absent, `undefined` failed
+that guard and the event settings form refused *every* save, including
+the upload-window edit that was the only way to stop uploads before that
+feature existed. Shipping it ahead of its migration would have left an
+organizer with no way to stop an upload mid-event — strictly worse than
+not deploying at all.
+
+So, concretely:
+
+- Validate a field only when it has a value to validate. Absent is not
+  invalid.
+- A boolean gate over a possibly-absent column has to state which way it
+  fails, and should fail toward the pre-existing behavior. `count <
+  undefined` is `false`, which silently disables whatever it guards.
+- Prefer migrating first. But do not rely on remembering to.
+
 ## Framework specifics (Next.js 16)
 
 These have each already caused a real bug in this codebase:

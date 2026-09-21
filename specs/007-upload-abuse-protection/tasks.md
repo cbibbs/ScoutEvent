@@ -224,6 +224,51 @@ stricter about this — it can be stale in *either* direction), and
 organizers can raise their own limit arbitrarily, which design §2
 intends. The migration must be applied before this code is deployed.
 
+## Phase 7 — Second review rework (found reviewing 042988e)
+
+T7.1 is the serious one: as it stands, deploying this code before the
+migration is applied leaves an organizer with **no way to stop uploads
+at all** — strictly worse than not deploying it.
+
+- [ ] T7.1 Tolerate the migration not being applied, per the new rule in
+      `specs/PROJECT.md`. Specifically: `EventSettingsForm` must not
+      reject an entire save because `photo_limit` is absent (today that
+      blocks editing `upload_ends_at`, which was the only pre-007 way to
+      close uploads); the QR's fullness term must not fire when the
+      limit is unknown (`0 < undefined` is `false`, which silently hides
+      the QR on every event); and the Stop control must fail
+      intelligibly rather than surfacing a raw PostgREST error. Absent
+      is not invalid.
+- [ ] T7.2 The pre-upload check must never be stricter than
+      `submit_photo()` (design §3). Compare a live count against a live
+      limit, and never let the pre-check mark a refusal non-retryable —
+      only the server's own refusal may. Today, raising the limit
+      mid-event leaves every guest with the page already open refused
+      against the old limit, with no retry.
+- [ ] T7.3 Extend that pre-check to the window and pause states too —
+      they leak orphans by the same path and the event state is already
+      being fetched (design §3).
+- [ ] T7.4 Set the bucket `file_size_limit` in the migration via
+      `update storage.buckets`, not by a dashboard click (design §3).
+      This closes T1.4 properly; keep the README text as documentation.
+- [ ] T7.5 Stop lands on the projector via realtime, not only the 30s
+      poll — add `events` to the publication and subscribe (design §5).
+      An emergency control that takes half a minute to visibly work
+      fails its own premise.
+- [ ] T7.6 One photo count on the manage page, not a live one beside a
+      frozen one; and take the poll interval from
+      `components/manage/constants` rather than redeclaring it
+      (design §7).
+- [ ] T7.7 The guest's `storage.remove()` after a failed `submit_photo()`
+      cannot work for anonymous callers and never could. Drop it or
+      comment it truthfully — it must not claim to clean up (design §3).
+- [ ] T7.8 Ignore a poll response that started before the most recent
+      local Stop/Resume write, so the control can't briefly show an
+      emergency stop as undone.
+- [ ] T7.9 The at-limit message should say that deleting photos frees
+      capacity, not only that the limit can be raised — rejecting does
+      not help, since the cap counts every status (design §7).
+
 ## Deliberately not built (requirements.md "Out of scope")
 
 Per-IP and per-device rate limiting, CAPTCHA, guest accounts, automated

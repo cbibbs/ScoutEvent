@@ -101,10 +101,38 @@ needed:
   query before the PUT keeps the common case from ever creating the
   object. This is advisory only — it is not the enforcement point, which
   stays in `submit_photo()` — but it removes the routine orphan path.
+
+  **Advisory means it may be weaker than the enforcement point, never
+  stricter.** A pre-check that refuses something the server would have
+  accepted is a bug, and a worse one than the orphan it prevents. The
+  first implementation compared a *live* count against a `photo_limit`
+  captured at page load, so after an organizer raised the limit — the
+  US-22 recovery path — every guest with the page already open was
+  refused against the old number, told the event was full, and given no
+  retry. At a campout that is most of the guests. So: compare live
+  against live, or not at all, and **never let the pre-check set the
+  non-retryable state.** Only the server's own refusal may do that.
+
+  Extend the same pre-check to the window and pause states while it is
+  there. Those refusals leak orphans by exactly the same path, and the
+  event state it needs is already being fetched.
 - **Let organizers clean up.** Widen the storage DELETE policy so an
   event's owner can delete any object under their own event's folder,
   whether or not a `photos` row points at it. Keying deletion to a row
   that may not exist is what makes orphans unreachable today.
+
+  Be honest about what this does and doesn't buy. It removes the
+  *permission* blocker; it does not give anyone a way to find an orphan,
+  since nothing in the app enumerates objects without a matching row.
+  Cleanup still means the Supabase dashboard. That is an accepted
+  limitation, not a solved problem, and building an orphan browser is
+  not worth it while the pre-check keeps the routine case from arising.
+
+  Note also that the guest's own attempt to delete the object it just
+  uploaded **cannot work and never could** — anon has no DELETE policy
+  on `storage.objects`, the call's result is discarded, and it fails
+  silently every time. Either drop it or keep it with a comment that
+  says so; what it must not do is sit there claiming to clean up.
 
 **Direct Storage writes ignore the cap entirely.** The anon key ships in
 the client bundle and the bucket's INSERT policy only checks that the
@@ -124,6 +152,15 @@ refuses oversized objects regardless of caller. Size it above what the
 compression pipeline legitimately produces with headroom — a few MB
 covers Feature 006's Sharp mode. Feature 006's originals go to R2, not
 this bucket, and need their own limit pinned in the presigned request.
+
+**Set it in the migration, not by hand.** `storage.buckets` is an
+ordinary table — Feature 001's migration already inserts into it — so
+`update storage.buckets set file_size_limit = … where id = 'photos';`
+belongs in the same SQL that everything else is applied with. An
+acceptance criterion that depends on someone remembering a dashboard
+click is not enforced, it is hoped for, and this one is a named
+mitigation for the residual byte-level risk. The README step stays as
+documentation of what the migration does, not as the mechanism.
 
 None of this makes the row cap useless: it is what stops a *well-behaved
 client* from filling the bucket, which is the realistic case here. It
@@ -212,6 +249,18 @@ alter table public.events
   error distinct from the window's.
 - Feature 005's QR gating and the slideshow's 30s poll treat it exactly
   as they treat the window — it joins the same polled `select`.
+- **But the poll alone is too slow for this one.** The window's effect
+  is recomputed on every slide tick against the clock, so it lands
+  within a slide. A pause can only be *learned*, so on the poll alone
+  the projector can keep inviting scans for up to thirty seconds after
+  the organizer hits Stop — while they stand there watching it not
+  work, which is the entire scenario US-23 exists for. Add `events` to
+  the realtime publication and have the slideshow subscribe to its own
+  event row, so a pause lands in about as long as an approval does. The
+  poll stays as the self-healing fallback, exactly as it does for
+  photos; this is the established pattern in this codebase, not a new
+  one. Anonymous clients can already read `events`, so this exposes
+  nothing new.
 - `EventSettingsForm` must not write this column at all. The settings
   form owns the schedule; the Stop control owns the pause. One writer
   each.
@@ -276,3 +325,21 @@ own bug, independent of which is stale.
 
 The event's upload state (open / paused / closed) is on the same footing
 and refreshes the same way.
+
+**One number, one source.** The manage page header already renders a
+photo total from the server render, and it does not refresh. Adding a
+second, live count beside it produces two figures for the same thing
+that disagree from the first upload onward — which is the bug this
+section names, regardless of which one is right. Render it once and
+share it, or make the header live too; do not ship both.
+
+For the same reason, the poll interval belongs in
+`components/manage/constants` where `PhotoManager` and `Slideshow`
+already read it from, not redeclared per component. Three copies of
+"30 seconds" is three things to forget to change.
+
+Finally, the at-limit message should say what actually frees capacity.
+The cap counts rows of every status, so *rejecting* junk photos does
+not help — only deleting them does. Telling an organizer to raise the
+limit while omitting that is steering them away from the remedy that
+costs nothing.
