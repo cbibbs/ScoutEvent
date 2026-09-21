@@ -22,9 +22,16 @@ though I ignored the notifications.
   accepting uploads, THE SYSTEM SHALL display the guest upload link as a
   scannable QR code in the lower-right corner of the screen, drawn on
   top of the photo where they overlap.
-- THE SYSTEM SHALL keep the QR code visible the whole time uploads are
-  open. It SHALL NOT fade out after a delay, appear only between
-  photos, or cycle in and out.
+- THE SYSTEM SHALL keep the QR code visible the whole time uploads can
+  actually be accepted. It SHALL NOT fade out after a delay, appear only
+  between photos, or cycle in and out.
+  **Amended by Feature 007 (US-21, US-22):** the upload window is no
+  longer the only gate. The QR is also hidden while moderation is off —
+  nothing should invite a roomful of strangers to put something on a
+  screen unreviewed — and while the event has hit its photo limit, for
+  the same reason given below about closed windows. The principle is
+  unchanged and is the one that generalizes: show the invitation only
+  when a scan can actually succeed.
 - THE SYSTEM SHALL keep the QR code scannable whatever is behind it —
   any photo may be dark, light, or visually busy.
 - THE SYSTEM SHALL label the QR code so a guest understands what it is

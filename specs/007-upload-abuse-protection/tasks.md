@@ -131,6 +131,49 @@ where applicable, verified) — per `specs/CONSTITUTION.md`.
 - [ ] T5.7 Redeploy to production. Deliberately not done — out of scope
       for this task (instructed not to deploy).
 
+## Phase 6 — Review rework (all found reviewing 72d8e3a)
+
+Three of these were defects in design.md, corrected before this phase
+was written; the implementation followed the spec it was given.
+
+- [ ] T6.1 Replace the `upload_ends_at = now()` pause with a dedicated
+      `events.uploads_paused` column (design §5, rewritten). Stop/Resume
+      writes only that column; `EventSettingsForm` must not write it;
+      `submit_photo()` refuses on it with its own error; the slideshow
+      poll treats it like the window. This removes both the lost-schedule
+      problem and the stale-settings-form regression below.
+- [ ] T6.2 Confirm the regression is gone: with uploads stopped, saving
+      unrelated settings must not re-open uploads or bring the QR back
+      (requirements US-23). This is the defect the rework exists for —
+      test it, don't assume the refactor covered it.
+- [ ] T6.3 `photo_limit`: add the `check (photo_limit > 0)` constraint
+      and stop the client submitting a blank or non-positive value
+      (design §2).
+- [ ] T6.4 Check the cap before uploading to Storage as well as inside
+      `submit_photo()`, so refused uploads stop creating orphaned
+      objects. The enforcement point stays in the function; this is
+      advisory (design §3).
+- [ ] T6.5 Widen the storage DELETE policy so an organizer can delete
+      any object under their own event's folder, with or without a
+      matching `photos` row — orphans are currently unreachable from the
+      app entirely (design §3).
+- [ ] T6.6 Add "not full" and "not paused" to the QR's visibility
+      condition, and show a "this event is full" state on the guest
+      upload page instead of the form (design §4, §6).
+- [ ] T6.7 Make the organizer's photo count and upload state live on the
+      existing poll, per `specs/PROJECT.md`'s counts-from-the-server
+      rule — a frozen count cannot warn anyone and actively reassures
+      while uploads are being refused (design §7).
+- [ ] T6.8 Render the Stop control for an event whose window hasn't
+      opened yet (design §5).
+- [ ] T6.9 Re-verify T5.4/T5.5 against the reworked pause.
+
+Known and accepted, not to be "fixed" silently: the cap is approximate
+under concurrent submissions (no lock — two simultaneous calls can both
+pass the count check), and organizers can raise their own limit
+arbitrarily, which design §2 intends. The migration must be applied
+before this code is deployed, or `photo_limit` reads as undefined.
+
 ## Deliberately not built (requirements.md "Out of scope")
 
 Per-IP and per-device rate limiting, CAPTCHA, guest accounts, automated

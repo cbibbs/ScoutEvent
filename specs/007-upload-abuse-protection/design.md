@@ -34,8 +34,18 @@ stated in requirements.md: one person can still fill one event.
 
 ```sql
 alter table public.events
-  add column photo_limit int not null default 500;
+  add column photo_limit int not null default 500
+    check (photo_limit > 0);
 ```
+
+The check constraint is not decoration. A number input cleared by the
+organizer yields `""`, `Number("") === 0`, and `min={1}` does not stop a
+non-required empty field from submitting — so without it, an organizer
+selecting the "500" to type "1000" and saving mid-thought sets the limit
+to zero and makes their event permanently full. That is inside the
+recovery path US-22 exists to provide, which is the worst place for it.
+The client must also refuse to submit a blank or non-positive value;
+the constraint is the backstop, not the whole answer.
 
 Enforced inside `submit_photo()`, which is already the single trusted
 gate for anonymous inserts:
@@ -65,17 +75,60 @@ well-behaved events collectively approaching the quota. This cap bounds
 any *one* event; that warning watches the *total*. Both are needed and
 neither substitutes for the other.
 
-## 3. File size, enforced where the client can't argue
+## 3. Bytes, not just rows
 
-The 15MB check in `UploadForm` is a client-side courtesy; anything
-calling Storage directly ignores it. Set a `file_size_limit` on the
-`photos` bucket itself (Supabase supports this per bucket) so the
-storage layer refuses oversized objects regardless of caller.
+**Corrected after review.** §2's cap counts `photos` rows, but the
+resource US-22 sets out to protect is bytes in the shared bucket, and
+those are written on a different path entirely: `UploadForm` PUTs the
+file to Storage *first*, then calls `submit_photo()`. The row cap does
+not sit in front of the bytes.
 
-Size it above what the compression pipeline legitimately produces with
-headroom — a few MB covers Feature 006's Sharp mode comfortably. Note
-that Feature 006's originals go to R2, not this bucket, and need their
-own limit pinned in the signing endpoint's presigned request.
+Three consequences, in order of how much they matter:
+
+**Refused uploads leak permanent orphans.** When `submit_photo()`
+rejects, `UploadForm` tries to delete the object it just uploaded — and
+that delete silently fails for every guest, because the only DELETE
+policy on `storage.objects` is `to authenticated`. Worse, that policy
+also requires a matching `photos` row (`p.storage_path =
+storage.objects.name`), which an orphan by definition lacks, so the
+organizer cannot remove it through the app either. Before this feature
+that was a rare race against a closing window; the cap makes it a
+routine path — a guest tapping "add photos" repeatedly at a full event
+leaves ~0.6MB of unreachable garbage per attempt. Two fixes, both
+needed:
+
+- **Check the cap before uploading**, not only after. A cheap count
+  query before the PUT keeps the common case from ever creating the
+  object. This is advisory only — it is not the enforcement point, which
+  stays in `submit_photo()` — but it removes the routine orphan path.
+- **Let organizers clean up.** Widen the storage DELETE policy so an
+  event's owner can delete any object under their own event's folder,
+  whether or not a `photos` row points at it. Keying deletion to a row
+  that may not exist is what makes orphans unreachable today.
+
+**Direct Storage writes ignore the cap entirely.** The anon key ships in
+the client bundle and the bucket's INSERT policy only checks that the
+event folder exists, so a script can write objects without ever calling
+`submit_photo()`. The row cap cannot stop this by construction; nothing
+short of removing the blanket anon INSERT policy can. That is a real
+residual risk and is recorded as one in requirements.md rather than
+papered over. The direction that actually closes it is routing guest
+uploads through a gated signed URL, exactly as Feature 006 §3a does for
+R2 — worth doing as its own change, and explicitly not smuggled into
+this one.
+
+**Per-object size.** The 15MB check in `UploadForm` is a client-side
+courtesy anything calling Storage directly ignores. Set a
+`file_size_limit` on the `photos` bucket itself so the storage layer
+refuses oversized objects regardless of caller. Size it above what the
+compression pipeline legitimately produces with headroom — a few MB
+covers Feature 006's Sharp mode. Feature 006's originals go to R2, not
+this bucket, and need their own limit pinned in the presigned request.
+
+None of this makes the row cap useless: it is what stops a *well-behaved
+client* from filling the bucket, which is the realistic case here. It
+just is not a security boundary for bytes, and US-22 should not be read
+as claiming it is.
 
 ## 4. Gating the join QR on moderation (US-21)
 
@@ -86,8 +139,29 @@ shape of problem and gets the same treatment: pass
 `moderation_enabled` down, and include it in the values the 30s poll
 already re-reads from `events`.
 
-The QR's visibility condition becomes "uploads are open **and**
-moderation is enabled". Nothing else about Feature 005 changes.
+The QR's visibility condition becomes "uploads are open **and** not
+paused (§5) **and** moderation is enabled **and** the event is not
+full".
+
+Fullness belongs in that list for the reason Feature 005 already gave
+for the upload window: "sending a guest to a page that refuses their
+upload is worse than showing them nothing". A full event is precisely
+that case, and worse than the closed-window one — a guest scans the
+projector, picks four photos, waits through compression and upload, and
+is refused four times, leaking four orphans (§3) on the way. The
+slideshow already re-reads the event on its 30s poll; the photo count
+joins it.
+
+For the same reason the guest upload page should show a "this event is
+full" state instead of the upload form, rather than letting someone
+select photos and only then discover it. That is the same shape as the
+existing closed-window state.
+
+**Feature 005's spec must be amended to match** — its US-17 currently
+says the QR is visible "the whole time uploads are open" and names the
+window as the only gate, which this feature makes false. The
+constitution calls amending superseded specs the rule this project
+breaks most often; this is that rule.
 
 Where moderation is turned off in `EventSettingsForm`, say what it
 costs — something to the effect that the slideshow's join QR only
@@ -97,16 +171,68 @@ broadcast invitation to a roomful of strangers.
 
 ## 5. Stop uploads now (US-23)
 
-The mechanism already exists: `upload_ends_at` in the past closes
-uploads, and both `submit_photo()` and Feature 005's QR gating already
-honour it live. So the control is one update —
-`upload_ends_at = now()` — and the rest of the system reacts on its own
-within a poll. Resuming clears it back (or pushes it out), which is why
-this is a pause rather than an ending.
+**Corrected after review.** This section originally said to implement
+Stop as `upload_ends_at = now()`, reusing the existing field on the
+grounds that a separate flag would create "two sources of truth for can
+anyone upload right now". That reasoning was wrong, and the
+implementation built from it had a defect that destroyed the feature in
+the exact situation it exists for. Both are recorded here so the
+argument isn't made again.
 
-Building it on the existing field rather than a new `uploads_paused`
-column avoids two sources of truth for "can anyone upload right now",
-which would inevitably disagree.
+The reasoning was wrong because `open = not paused AND within the
+window` is a single rule over two inputs, which is ordinary, not two
+sources of truth. What the original actually did was conflate two
+different concepts — *a schedule* the organizer configured in advance,
+and *a pause* they hit in the moment — into one column. That is
+destructive in both directions:
+
+- Resume had nowhere to restore a schedule from, so an organizer who had
+  set "uploads close at 22:00", stopped at 20:30 and resumed at 20:35
+  ended up with an event that never closes, silently.
+- Worse, it created a second *writer* of the field. `EventSettingsForm`
+  holds `upload_ends_at` in state captured at mount and writes it back
+  on every save, and `router.refresh()` re-renders Server Components
+  without resetting client state. So: organizer hits Stop, then does the
+  obvious next thing — turns moderation on, presses Save — and the
+  stale form silently re-opens uploads *and* puts the join QR back on
+  the projector. Nothing tells them. That is the one sequence US-23
+  exists for.
+
+So use a dedicated flag:
+
+```sql
+alter table public.events
+  add column uploads_paused boolean not null default false;
+```
+
+- Stop sets it true, Resume sets it false. Neither touches
+  `upload_ends_at`, so a configured schedule survives untouched and
+  there is nothing to restore.
+- `submit_photo()` refuses when `uploads_paused` is true, with its own
+  error distinct from the window's.
+- Feature 005's QR gating and the slideshow's 30s poll treat it exactly
+  as they treat the window — it joins the same polled `select`.
+- `EventSettingsForm` must not write this column at all. The settings
+  form owns the schedule; the Stop control owns the pause. One writer
+  each.
+
+The general lesson, worth applying beyond this feature: two components
+writing the same column, where one caches its value in client state, is
+a bug waiting for a coincidence. `router.refresh()` does not reset
+client state.
+
+Placement and styling matter more than the logic here. This is reached
+while flustered, in front of people, so it belongs at the top of the
+manage page near the event's status, not buried in the settings form.
+It must be unmistakably **not** destructive — Feature 003 US-11 is the
+precedent: an organizer reaching for "make it stop" must not be able to
+land on "delete everything". Label it for what it does ("Stop uploads"
+/ "Resume uploads"), show current state plainly, and keep it visually
+distinct from Delete.
+
+The control must render whatever state the event is in, including before
+its window has opened — an organizer setting up early still needs to be
+able to pause.
 
 Placement and styling matter more than the logic here. This is reached
 while flustered, in front of people, so it belongs at the top of the
@@ -130,3 +256,23 @@ than a fault of the guest or an app error:
 `submit_photo()` raises distinguishable errors for these so `UploadForm`
 can tell them apart from a network failure, which it already retries.
 A retry button on "the event is full" would be actively unhelpful.
+
+## 7. The organizer's counts must be live
+
+US-22 requires warning the organizer *before* the limit is reached, and
+a count captured at page load cannot do that. The manage page is meant
+to be left open all day — that is the whole premise of Feature 003's
+live review queue — so a control reading "12 / 500 photos" in neutral
+grey while uploads are actually being refused is worse than showing
+nothing: it actively reassures. The first signal would be a guest
+mentioning uploads are broken.
+
+`PhotoManager` on the same screen already does this correctly, and
+`specs/PROJECT.md` states the rule: counts come from the server, on the
+existing poll, never from arithmetic on payloads. The upload-status
+control follows the same rule rather than inventing a different one.
+Two components on one screen disagreeing about the same number is its
+own bug, independent of which is stale.
+
+The event's upload state (open / paused / closed) is on the same footing
+and refreshes the same way.

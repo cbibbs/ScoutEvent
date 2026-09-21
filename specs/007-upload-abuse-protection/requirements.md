@@ -66,11 +66,22 @@ the storage every other event depends on.
   water mid-occasion — an event happens once (principle 3).
 - THE SYSTEM SHALL enforce a maximum file size at the storage layer,
   not only in the browser.
+- THE SYSTEM SHALL reject a limit that would disable uploads outright.
+  An organizer clearing the field to retype it must not be able to save
+  a value that makes their event permanently full — that failure would
+  sit inside the very recovery path this story exists to provide.
 - WHEN an event reaches its limit, THE SYSTEM SHALL tell the guest
   plainly that the event is full and to speak to the organizer, rather
-  than showing a generic failure.
+  than showing a generic failure — and SHALL do so before they choose
+  photos and wait for an upload, not only after.
+- WHEN an event is full, THE SYSTEM SHALL stop advertising the join QR
+  on the slideshow, for the reason Feature 005 already gives about the
+  closed upload window: inviting a scan that can only end in refusal is
+  worse than showing nothing.
 - THE SYSTEM SHALL show the organizer how close the event is to its
-  limit before it is reached.
+  limit before it is reached, and that figure SHALL stay current on a
+  page left open — a count frozen at page load cannot warn anyone, and
+  reassures while uploads are being refused.
 
 ### US-23: The organizer can stop uploads in one action
 
@@ -84,6 +95,12 @@ uploads immediately, without navigating a settings form.
   slideshow, without anyone reloading it.
 - THE SYSTEM SHALL let the organizer resume uploads just as directly,
   since the common use is a pause, not an ending.
+- Stopping and resuming SHALL leave any upload schedule the organizer
+  configured exactly as it was. A pause is not a rescheduling, and an
+  organizer must not lose a close time by using this control.
+- Nothing else in the app SHALL be able to silently undo a stop. In
+  particular, saving unrelated settings while uploads are stopped must
+  not re-open them.
 - THE SYSTEM SHALL keep this control distinct from anything destructive.
   Stopping uploads must never be confusable with deleting photos —
   the same reasoning that separated "remove from slideshow" from
@@ -96,6 +113,17 @@ feature caps the event as a whole and does not limit any individual.
 That was chosen knowingly: the alternatives each cost more than they are
 worth here (design.md §1), and one of them would mean storing a
 tracking identifier on a guest's device.
+
+**The cap bounds photo rows, not bytes in the bucket.** Guests upload
+to Storage directly under a blanket anonymous INSERT policy, so a script
+holding the public anon key can write objects without ever calling
+`submit_photo()`, and no row cap can stop that by construction. What
+closes it is routing guest uploads through a gated signed URL, the way
+Feature 006 does for R2 — deliberately left as its own change rather
+than smuggled into this one. Within this feature the mitigations are a
+per-object size limit at the storage layer, not creating objects for
+uploads that will be refused anyway, and making orphaned objects
+something the organizer can actually delete (design.md §3).
 
 What that leaves is a recovery story rather than a prevention story, and
 it has to actually work: moderation keeps it off the screen (US-21),
