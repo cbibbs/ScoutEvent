@@ -16,6 +16,7 @@ export type Event = {
   upload_ends_at: string | null;
   moderation_enabled: boolean;
   slideshow_interval_seconds: number;
+  photo_limit: number;
   created_at: string;
 };
 

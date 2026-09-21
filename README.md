@@ -31,18 +31,32 @@ for the reasoning and the full data model.
 ## Setting up Supabase (one-time)
 
 1. Create a free project at [supabase.com](https://supabase.com).
-2. In the Supabase dashboard, open **SQL Editor** and run the contents of
-   [`supabase/migrations/20260913000000_init.sql`](supabase/migrations/20260913000000_init.sql).
-   This creates the `events`/`photos` tables, their Row Level Security
+2. In the Supabase dashboard, open **SQL Editor** and run each file in
+   [`supabase/migrations/`](supabase/migrations/) in filename order (each
+   is a one-time migration, applied once and never edited after — see
+   that folder for the current list). The first,
+   [`20260913000000_init.sql`](supabase/migrations/20260913000000_init.sql),
+   creates the `events`/`photos` tables, their Row Level Security
    policies, the `submit_photo()` function guests use to upload, and the
-   public `photos` storage bucket.
-3. In **Project Settings → API**, copy the **Project URL** and the
+   public `photos` storage bucket. Later ones are additive on top of it.
+3. Set a **file size limit on the `photos` storage bucket** so an
+   oversized object is refused by Supabase Storage itself, not only by
+   the browser upload form (`UploadForm` already rejects anything over
+   15MB client-side, which anything calling Storage directly can ignore —
+   specs/007-upload-abuse-protection/design.md §3). In the dashboard:
+   **Storage → photos → Edit bucket → File size limit**, set a few MB of
+   headroom above what the compression pipeline produces (`UploadForm`
+   compresses to ~0.6MB before upload as of this writing). This isn't
+   part of the SQL migrations because it's a bucket-level setting, not a
+   database object — set it once per project, same as the bucket's public
+   flag.
+4. In **Project Settings → API**, copy the **Project URL** and the
    **anon public** key.
-4. In **Authentication → URL Configuration**, add your app's URL (e.g.
+5. In **Authentication → URL Configuration**, add your app's URL (e.g.
    `http://localhost:3000` for local dev, plus your Vercel URL once
    deployed) to the redirect allow-list — the magic-link email links back
    to `/auth/callback` on whichever origin sent the sign-in request.
-5. In **Authentication → Email Templates → Magic Link**, set the subject
+6. In **Authentication → Email Templates → Magic Link**, set the subject
    to `Your ScoutEvent sign-in link` and paste in
    [`supabase/templates/magic-link.html`](supabase/templates/magic-link.html).
    Out of the box the email arrives with the subject "Magic Link" and no
@@ -83,7 +97,7 @@ events at a time. Keep an eye on these as usage grows:
 | Limit | Free tier | What happens as you approach it |
 |---|---|---|
 | Supabase database | 500MB | Event/photo metadata is tiny (a few hundred bytes per photo row); this is very unlikely to bind before storage does. |
-| Supabase storage | 1GB | Guest photos are compressed client-side to ~0.6MB max before upload (see `UploadForm`), so this is roughly 1,500+ photos. Delete old events' photos from the dashboard to free space. |
+| Supabase storage | 1GB | Guest photos are compressed client-side to ~0.6MB max before upload (see `UploadForm`), so this is roughly 1,500+ photos. Delete old events' photos from the dashboard to free space. Each event also has its own `photo_limit` (default 500, raisable per event from its Settings) so one event can't consume what every other event depends on — see `specs/007-upload-abuse-protection/`. |
 | Supabase bandwidth | 2GB/mo | Each slideshow view re-downloads photos; a screen left running all day at a busy event is the main driver. Increasing the slideshow interval reduces re-renders (not re-downloads — the browser caches images already shown). |
 | Supabase auth emails | A few per hour on the built-in mail service | This is the one most likely to bite you, because it fails *silently* — the app says "link sent" and the email simply never arrives, which looks like a broken app rather than a throttle. Only organizers ever receive email (guests never sign in), so it's rarely hit, but if several people sign in at once, configure custom SMTP under **Authentication → Settings → SMTP** with any provider's free tier. That also replaces Supabase's sender address with your own, which is the part the Magic Link template can't fix. |
 | Supabase project pause | Auto-pauses after 7 days with no API activity | Sign in / open the dashboard a day or two before your event to make sure the project is awake. Restoring a paused project just takes one dashboard click. |

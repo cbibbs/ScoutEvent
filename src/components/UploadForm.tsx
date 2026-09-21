@@ -6,6 +6,15 @@ import { createClient } from "@/lib/supabase/client";
 
 const MAX_ORIGINAL_SIZE_MB = 15;
 
+// Matches the message submit_photo() raises when an event's photo_limit
+// is reached (supabase/migrations/20260921000000_upload_abuse_protection.sql,
+// design.md §6) — distinguishable from the upload-window errors and from a
+// network failure, so this one can skip the retry affordance. Retrying
+// "the event is full" can't help.
+const EVENT_FULL_ERROR = "event photo limit reached";
+const EVENT_FULL_MESSAGE =
+  "This event has reached its photo limit — let the organizer know.";
+
 type FileStatus = "compressing" | "uploading" | "done" | "error";
 
 interface QueuedFile {
@@ -14,6 +23,11 @@ interface QueuedFile {
   name: string;
   status: FileStatus;
   error?: string;
+  // False only for refusals a retry cannot fix (the event is full) — see
+  // EVENT_FULL_ERROR above. Defaults to true (retryable) everywhere else,
+  // including the closed-upload-window case, which reads as closed rather
+  // than as a fault (design.md §6) but could still legitimately reopen.
+  retryable?: boolean;
 }
 
 export function UploadForm({ eventId }: { eventId: string }) {
@@ -76,9 +90,14 @@ export function UploadForm({ eventId }: { eventId: string }) {
 
       if (rpcError) {
         // Clean up the orphaned storage object if the DB row couldn't be created
-        // (e.g. uploads just closed for this event).
+        // (e.g. uploads just closed for this event, or the event is full).
         await supabase.storage.from("photos").remove([storagePath]);
-        updateFile(id, { status: "error", error: rpcError.message });
+        const isFull = rpcError.message.includes(EVENT_FULL_ERROR);
+        updateFile(id, {
+          status: "error",
+          error: isFull ? EVENT_FULL_MESSAGE : rpcError.message,
+          retryable: !isFull,
+        });
         return;
       }
 
@@ -162,7 +181,7 @@ export function UploadForm({ eventId }: { eventId: string }) {
                   {f.status === "done" && "Uploaded ✓"}
                   {f.status === "error" && (f.error ?? "Failed")}
                 </span>
-                {f.status === "error" && (
+                {f.status === "error" && f.retryable !== false && (
                   <button
                     type="button"
                     onClick={() => retry(f)}

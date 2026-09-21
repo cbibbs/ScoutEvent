@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { EventSettingsForm } from "@/components/EventSettingsForm";
+import { UploadStatusControl } from "@/components/UploadStatusControl";
 import { ShareLinks } from "@/components/ShareLinks";
 import { PhotoManager } from "@/components/manage/PhotoManager";
 import {
@@ -86,6 +87,16 @@ export default async function ManageEventPage({
           )}
         </div>
       </div>
+
+      <UploadStatusControl
+        event={{
+          id: event.id,
+          upload_starts_at: event.upload_starts_at,
+          upload_ends_at: event.upload_ends_at,
+          photo_limit: event.photo_limit,
+        }}
+        photoCount={totalRes.count ?? 0}
+      />
 
       <div className="mb-10 grid grid-cols-1 gap-6 lg:grid-cols-[1.2fr_1fr]">
         <section className="card p-6">

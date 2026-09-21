@@ -29,6 +29,7 @@ export function EventSettingsForm({ event }: { event: Event }) {
   const [slideshowInterval, setSlideshowInterval] = useState(
     event.slideshow_interval_seconds,
   );
+  const [photoLimit, setPhotoLimit] = useState(event.photo_limit);
   const [status, setStatus] = useState<"idle" | "saving" | "saved" | "error">(
     "idle",
   );
@@ -53,6 +54,7 @@ export function EventSettingsForm({ event }: { event: Event }) {
           : null,
         moderation_enabled: moderationEnabled,
         slideshow_interval_seconds: slideshowInterval,
+        photo_limit: photoLimit,
       })
       .eq("id", event.id);
 
@@ -123,6 +125,22 @@ export function EventSettingsForm({ event }: { event: Event }) {
         />
       </label>
 
+      <label className="flex flex-col">
+        <span className="field-label">Photo limit for this event</span>
+        <input
+          type="number"
+          min={1}
+          value={photoLimit}
+          onChange={(e) => setPhotoLimit(Number(e.target.value))}
+          className="input w-32"
+        />
+        <span className="mt-1 text-[13px] text-ink-soft">
+          Guests can&apos;t upload past this many photos. Raise it here if a
+          real event legitimately hits the cap — it never has to be dead in
+          the water mid-occasion.
+        </span>
+      </label>
+
       <label className="flex items-center gap-2">
         <input
           type="checkbox"
@@ -133,6 +151,15 @@ export function EventSettingsForm({ event }: { event: Event }) {
           Require my approval before photos appear (moderation)
         </span>
       </label>
+      {!moderationEnabled && (
+        <p className="-mt-2 rounded-md bg-warn-tint px-3 py-2 text-[13px] text-warn">
+          With moderation off, photos appear immediately and the
+          slideshow&apos;s join QR won&apos;t be shown — nothing should
+          invite a roomful of strangers to put something on screen
+          unreviewed. You can still share the upload link yourself; guests
+          who have it can keep uploading either way.
+        </p>
+      )}
 
       <button
         type="submit"

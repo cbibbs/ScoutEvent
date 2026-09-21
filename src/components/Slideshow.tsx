@@ -30,6 +30,10 @@ const QR_QUIET_ZONE = "max(18px, 2.9vmin)";
 // panel viewed from a few steps back (design.md §3).
 const QR_CAPTION_SIZE = "max(13px, 1.7vmin)";
 
+type PolledEventFields = Pick<
+  Event,
+  "upload_starts_at" | "upload_ends_at" | "moderation_enabled"
+>;
 type UploadWindow = Pick<Event, "upload_starts_at" | "upload_ends_at">;
 
 export function Slideshow({
@@ -41,6 +45,7 @@ export function Slideshow({
   initialUploadStartsAt,
   initialUploadEndsAt,
   initialUploadsOpen,
+  initialModerationEnabled,
 }: {
   eventId: string;
   eventName: string;
@@ -50,6 +55,7 @@ export function Slideshow({
   initialUploadStartsAt: string | null;
   initialUploadEndsAt: string | null;
   initialUploadsOpen: boolean;
+  initialModerationEnabled: boolean;
 }) {
   const supabase = useMemo(() => createClient(), []);
   const [photos, setPhotos] = useState(initialPhotos);
@@ -58,6 +64,15 @@ export function Slideshow({
   // when the photo list shrinks or grows.
   const [tick, setTick] = useState(0);
   const [uploadsOpen, setUploadsOpen] = useState(initialUploadsOpen);
+  // Whether moderation is on gates the join QR the same as the upload
+  // window does (design.md §4): nothing should invite a roomful of
+  // strangers to put something on screen unreviewed. Unlike the window,
+  // this doesn't need re-evaluating against the clock on every
+  // auto-advance tick — it only changes when the organizer flips it, which
+  // the poll below picks up directly, so plain state (not a ref) is enough.
+  const [moderationEnabled, setModerationEnabled] = useState(
+    initialModerationEnabled,
+  );
 
   // The upload window isn't fixed for the life of the page — an
   // organizer can shorten upload_ends_at mid-show from the event
@@ -134,9 +149,9 @@ export function Slideshow({
             .returns<Photo[]>(),
           supabase
             .from("events")
-            .select("upload_starts_at, upload_ends_at")
+            .select("upload_starts_at, upload_ends_at, moderation_enabled")
             .eq("id", eventId)
-            .maybeSingle<UploadWindow>(),
+            .maybeSingle<PolledEventFields>(),
         ],
       );
       if (freshPhotos) setPhotos(freshPhotos);
@@ -148,6 +163,7 @@ export function Slideshow({
             freshEvent.upload_ends_at,
           ),
         );
+        setModerationEnabled(freshEvent.moderation_enabled);
       }
     }, POLL_FALLBACK_MS);
     return () => clearInterval(id);
@@ -177,6 +193,13 @@ export function Slideshow({
   }, [intervalSeconds]);
 
   const current = photos.length > 0 ? photos[tick % photos.length] : undefined;
+
+  // The join QR is the broadcast invitation to a roomful of strangers
+  // (design.md §4, US-21): it shows only while uploads are open AND
+  // moderation is on, so nothing can reach the screen unreviewed. Derived
+  // once here so the QR card and the caption's reserved padding below can
+  // never drift out of sync with each other.
+  const qrVisible = uploadsOpen && moderationEnabled;
 
   // The encoded value is constant for the life of the page — resolved
   // server-side from the request (design.md §1), not
@@ -222,9 +245,9 @@ export function Slideshow({
           // Reserve at least the QR card's width plus its margin so a long
           // uploader name can never run underneath it (design.md §3, T3.4).
           // Only reserved while the card is actually showing, so the
-          // caption re-centers once uploads close.
+          // caption re-centers once uploads close or moderation goes off.
           style={
-            uploadsOpen
+            qrVisible
               ? { paddingRight: `calc(${QR_CARD_WIDTH} + ${QR_CARD_MARGIN})` }
               : undefined
           }
@@ -232,7 +255,7 @@ export function Slideshow({
           {current.uploader_name}
         </p>
       )}
-      {uploadsOpen && (
+      {qrVisible && (
         // Opaque light card so the QR is legible over any photo — a code
         // drawn straight onto a dark or busy image won't scan. The
         // card's padding *and* the gap to the caption below the code

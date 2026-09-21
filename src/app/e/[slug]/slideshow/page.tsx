@@ -45,6 +45,7 @@ export default async function SlideshowPage({
         event.upload_starts_at,
         event.upload_ends_at,
       )}
+      initialModerationEnabled={event.moderation_enabled}
     />
   );
 }
