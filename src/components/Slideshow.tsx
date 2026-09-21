@@ -32,7 +32,11 @@ const QR_CAPTION_SIZE = "max(13px, 1.7vmin)";
 
 type PolledEventFields = Pick<
   Event,
-  "upload_starts_at" | "upload_ends_at" | "moderation_enabled"
+  | "upload_starts_at"
+  | "upload_ends_at"
+  | "moderation_enabled"
+  | "uploads_paused"
+  | "photo_limit"
 >;
 type UploadWindow = Pick<Event, "upload_starts_at" | "upload_ends_at">;
 
@@ -46,6 +50,9 @@ export function Slideshow({
   initialUploadEndsAt,
   initialUploadsOpen,
   initialModerationEnabled,
+  initialUploadsPaused,
+  initialPhotoLimit,
+  initialPhotoCount,
 }: {
   eventId: string;
   eventName: string;
@@ -56,6 +63,9 @@ export function Slideshow({
   initialUploadEndsAt: string | null;
   initialUploadsOpen: boolean;
   initialModerationEnabled: boolean;
+  initialUploadsPaused: boolean;
+  initialPhotoLimit: number;
+  initialPhotoCount: number;
 }) {
   const supabase = useMemo(() => createClient(), []);
   const [photos, setPhotos] = useState(initialPhotos);
@@ -73,6 +83,14 @@ export function Slideshow({
   const [moderationEnabled, setModerationEnabled] = useState(
     initialModerationEnabled,
   );
+  // Stop uploads (US-23) and the photo cap (US-22) gate the QR the same
+  // way: a scan that can only end in refusal is worse than no invitation
+  // at all (design.md §4, the same reasoning Feature 005 already gives
+  // for the closed window). photoLimit is tracked live too since an
+  // organizer can raise it mid-event.
+  const [uploadsPaused, setUploadsPaused] = useState(initialUploadsPaused);
+  const [photoLimit, setPhotoLimit] = useState(initialPhotoLimit);
+  const [photoCount, setPhotoCount] = useState(initialPhotoCount);
 
   // The upload window isn't fixed for the life of the page — an
   // organizer can shorten upload_ends_at mid-show from the event
@@ -137,8 +155,8 @@ export function Slideshow({
   // (design.md §2).
   useEffect(() => {
     const id = setInterval(async () => {
-      const [{ data: freshPhotos }, { data: freshEvent }] = await Promise.all(
-        [
+      const [{ data: freshPhotos }, { data: freshEvent }, { data: freshCount }] =
+        await Promise.all([
           supabase
             .from("photos")
             .select("*")
@@ -149,11 +167,17 @@ export function Slideshow({
             .returns<Photo[]>(),
           supabase
             .from("events")
-            .select("upload_starts_at, upload_ends_at, moderation_enabled")
+            .select(
+              "upload_starts_at, upload_ends_at, moderation_enabled, uploads_paused, photo_limit",
+            )
             .eq("id", eventId)
             .maybeSingle<PolledEventFields>(),
-        ],
-      );
+          // Rows of every status count toward the cap (design.md §2), which
+          // an anonymous `select count(*)` on photos cannot see past its
+          // RLS policy — event_photo_count() is security definer for
+          // exactly this (design.md §3).
+          supabase.rpc("event_photo_count", { p_event_id: eventId }),
+        ]);
       if (freshPhotos) setPhotos(freshPhotos);
       if (freshEvent) {
         uploadWindowRef.current = freshEvent;
@@ -164,7 +188,10 @@ export function Slideshow({
           ),
         );
         setModerationEnabled(freshEvent.moderation_enabled);
+        setUploadsPaused(freshEvent.uploads_paused);
+        setPhotoLimit(freshEvent.photo_limit);
       }
+      if (typeof freshCount === "number") setPhotoCount(freshCount);
     }, POLL_FALLBACK_MS);
     return () => clearInterval(id);
   }, [eventId, supabase]);
@@ -195,11 +222,14 @@ export function Slideshow({
   const current = photos.length > 0 ? photos[tick % photos.length] : undefined;
 
   // The join QR is the broadcast invitation to a roomful of strangers
-  // (design.md §4, US-21): it shows only while uploads are open AND
-  // moderation is on, so nothing can reach the screen unreviewed. Derived
-  // once here so the QR card and the caption's reserved padding below can
-  // never drift out of sync with each other.
-  const qrVisible = uploadsOpen && moderationEnabled;
+  // (design.md §4, US-21/US-22/US-23): it shows only while uploads are
+  // open, not paused, moderation is on, and the event isn't full — a scan
+  // that can only end in refusal is worse than no invitation at all, the
+  // same reasoning Feature 005 already gives for the closed window.
+  // Derived once here so the QR card and the caption's reserved padding
+  // below can never drift out of sync with each other.
+  const qrVisible =
+    uploadsOpen && !uploadsPaused && moderationEnabled && photoCount < photoLimit;
 
   // The encoded value is constant for the life of the page — resolved
   // server-side from the request (design.md §1), not

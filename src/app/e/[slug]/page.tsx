@@ -26,6 +26,20 @@ export default async function GuestUploadPage({
     event.upload_ends_at,
   );
 
+  // security definer — see event_photo_count() in
+  // 20260921000000_upload_abuse_protection.sql (design.md §3): a plain
+  // anonymous count would undercount past the photos SELECT policy, which
+  // would make this page show the upload form for an event that's
+  // actually full.
+  const { data: photoCount } = await supabase.rpc("event_photo_count", {
+    p_event_id: event.id,
+  });
+  const full = (photoCount ?? 0) >= event.photo_limit;
+  // Stopped (US-23) and closed-by-schedule read identically to a guest —
+  // "from the guest's side a paused event and a finished one are the
+  // same thing" (design.md §6) — so they share the same copy below.
+  const stopped = closed || event.uploads_paused;
+
   return (
     <div className="min-h-screen bg-ground">
       <div className="tartan-rule" />
@@ -60,13 +74,20 @@ export default async function GuestUploadPage({
           <p className="card w-full p-4 text-center text-sm text-warn">
             Uploads for this event haven&apos;t opened yet. Check back soon!
           </p>
-        ) : closed ? (
+        ) : stopped ? (
           <p className="card w-full p-4 text-center text-sm text-ink-soft">
             Uploads for this event are closed. Thanks for sharing your
             photos!
           </p>
+        ) : full ? (
+          // Told before they pick photos and wait through compression and
+          // upload only to be refused, not after (US-22, design.md §4).
+          <p className="card w-full p-4 text-center text-sm text-ink-soft">
+            This event has reached its photo limit — let the organizer
+            know.
+          </p>
         ) : (
-          <UploadForm eventId={event.id} />
+          <UploadForm eventId={event.id} photoLimit={event.photo_limit} />
         )}
 
         <Link

@@ -21,14 +21,20 @@ export default async function SlideshowPage({
 
   if (!event) notFound();
 
-  const { data: photos } = await supabase
-    .from("photos")
-    .select("*")
-    .eq("event_id", event.id)
-    .eq("status", "approved")
-    .eq("in_slideshow", true)
-    .order("created_at", { ascending: true })
-    .returns<Photo[]>();
+  const [{ data: photos }, { data: photoCount }] = await Promise.all([
+    supabase
+      .from("photos")
+      .select("*")
+      .eq("event_id", event.id)
+      .eq("status", "approved")
+      .eq("in_slideshow", true)
+      .order("created_at", { ascending: true })
+      .returns<Photo[]>(),
+    // security definer — see event_photo_count() in
+    // 20260921000000_upload_abuse_protection.sql (design.md §3): a plain
+    // anonymous count would undercount past the photos SELECT policy.
+    supabase.rpc("event_photo_count", { p_event_id: event.id }),
+  ]);
 
   const origin = await resolveOrigin();
 
@@ -46,6 +52,9 @@ export default async function SlideshowPage({
         event.upload_ends_at,
       )}
       initialModerationEnabled={event.moderation_enabled}
+      initialUploadsPaused={event.uploads_paused}
+      initialPhotoLimit={event.photo_limit}
+      initialPhotoCount={photoCount ?? 0}
     />
   );
 }

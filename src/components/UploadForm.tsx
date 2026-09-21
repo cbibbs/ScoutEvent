@@ -15,6 +15,18 @@ const EVENT_FULL_ERROR = "event photo limit reached";
 const EVENT_FULL_MESSAGE =
   "This event has reached its photo limit — let the organizer know.";
 
+// A paused event reads exactly like a closed one to the guest — "from
+// the guest's side a paused event and a finished one are the same thing"
+// (design.md §6) — even though submit_photo() raises a distinct message
+// for each internally (T6.1). Both stay retryable (default), since either
+// could legitimately reopen while the guest still has the page open.
+const CLOSED_ERRORS = [
+  "uploads are closed for this event",
+  "uploads are paused for this event",
+];
+const CLOSED_MESSAGE =
+  "Uploads for this event are closed. Thanks for sharing your photos!";
+
 type FileStatus = "compressing" | "uploading" | "done" | "error";
 
 interface QueuedFile {
@@ -30,7 +42,13 @@ interface QueuedFile {
   retryable?: boolean;
 }
 
-export function UploadForm({ eventId }: { eventId: string }) {
+export function UploadForm({
+  eventId,
+  photoLimit,
+}: {
+  eventId: string;
+  photoLimit: number;
+}) {
   const supabase = useMemo(() => createClient(), []);
   const [uploaderName, setUploaderName] = useState("");
   const [queue, setQueue] = useState<QueuedFile[]>([]);
@@ -66,6 +84,26 @@ export function UploadForm({ eventId }: { eventId: string }) {
         fileType: "image/jpeg",
       });
 
+      // Advisory only — enforcement stays in submit_photo() below, which
+      // is the only thing that can't be raced or skipped. This just keeps
+      // the *common* case (an event that's already full) from ever
+      // creating a Storage object that submit_photo() will immediately
+      // refuse to attach a row to, which would otherwise leak an orphan
+      // no one can reach (design.md §3, T6.4). A stale/approximate count
+      // here is accepted — see submit_photo()'s own check for the real
+      // gate.
+      const { data: currentCount } = await supabase.rpc("event_photo_count", {
+        p_event_id: eventId,
+      });
+      if (typeof currentCount === "number" && currentCount >= photoLimit) {
+        updateFile(id, {
+          status: "error",
+          error: EVENT_FULL_MESSAGE,
+          retryable: false,
+        });
+        return;
+      }
+
       updateFile(id, { status: "uploading" });
 
       const storagePath = `${eventId}/${crypto.randomUUID()}.jpg`;
@@ -89,13 +127,23 @@ export function UploadForm({ eventId }: { eventId: string }) {
       });
 
       if (rpcError) {
-        // Clean up the orphaned storage object if the DB row couldn't be created
-        // (e.g. uploads just closed for this event, or the event is full).
+        // Clean up the orphaned storage object if the DB row couldn't be
+        // created (e.g. uploads just closed/paused for this event, or the
+        // event is full). Still needed here even with the pre-check above:
+        // that check is advisory, and the window/pause state can change in
+        // the moment between it and this call.
         await supabase.storage.from("photos").remove([storagePath]);
         const isFull = rpcError.message.includes(EVENT_FULL_ERROR);
+        const isClosed = CLOSED_ERRORS.some((m) =>
+          rpcError.message.includes(m),
+        );
         updateFile(id, {
           status: "error",
-          error: isFull ? EVENT_FULL_MESSAGE : rpcError.message,
+          error: isFull
+            ? EVENT_FULL_MESSAGE
+            : isClosed
+              ? CLOSED_MESSAGE
+              : rpcError.message,
           retryable: !isFull,
         });
         return;

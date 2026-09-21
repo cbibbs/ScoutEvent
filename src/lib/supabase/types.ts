@@ -17,6 +17,7 @@ export type Event = {
   moderation_enabled: boolean;
   slideshow_interval_seconds: number;
   photo_limit: number;
+  uploads_paused: boolean;
   created_at: string;
 };
 
@@ -66,6 +67,10 @@ export type Database = {
           p_height?: number | null;
         };
         Returns: Photo;
+      };
+      event_photo_count: {
+        Args: { p_event_id: string };
+        Returns: number;
       };
     };
   };

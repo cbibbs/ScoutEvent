@@ -89,13 +89,12 @@ export default async function ManageEventPage({
       </div>
 
       <UploadStatusControl
-        event={{
-          id: event.id,
-          upload_starts_at: event.upload_starts_at,
-          upload_ends_at: event.upload_ends_at,
-          photo_limit: event.photo_limit,
-        }}
-        photoCount={totalRes.count ?? 0}
+        eventId={event.id}
+        initialUploadStartsAt={event.upload_starts_at}
+        initialUploadEndsAt={event.upload_ends_at}
+        initialUploadsPaused={event.uploads_paused}
+        initialPhotoLimit={event.photo_limit}
+        initialPhotoCount={totalRes.count ?? 0}
       />
 
       <div className="mb-10 grid grid-cols-1 gap-6 lg:grid-cols-[1.2fr_1fr]">

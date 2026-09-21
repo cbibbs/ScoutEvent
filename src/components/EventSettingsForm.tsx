@@ -40,6 +40,17 @@ export function EventSettingsForm({ event }: { event: Event }) {
     setStatus("saving");
     setError(null);
 
+    // Clearing the number input to retype it yields "", and Number("")
+    // is 0 — `min={1}` alone does not stop a non-required empty field
+    // from submitting. Refuse client-side rather than letting that save a
+    // limit that makes the event permanently full; the DB check
+    // constraint is the backstop, not the only guard (design.md §2).
+    if (!Number.isFinite(photoLimit) || photoLimit < 1) {
+      setStatus("error");
+      setError("Photo limit must be at least 1.");
+      return;
+    }
+
     const supabase = createClient();
     const { error } = await supabase
       .from("events")
