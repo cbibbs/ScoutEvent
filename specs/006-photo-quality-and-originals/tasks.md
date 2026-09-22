@@ -74,35 +74,54 @@ Only blocks Phase 3. Phases 1-2 can proceed in parallel.
       or 2560px accordingly; record `display_bytes` (design §1, §2).
 - [ ] T2.2 Confirm the mode change applies only to new uploads and
       nothing retroactively rewrites existing photos (US-18).
-- [ ] T2.3 **Establish why the served `cache-control` does not match the
-      stored one, before assuming any remedy** (design §1b, US-20).
-      Measured today: every object in the bucket stores
-      `cacheControl: max-age=3600`, and every object is served
-      `cache-control: no-cache`. Something between the two overrides it
-      and we do not know what. Candidates to check, none confirmed: a
-      project- or bucket-level storage setting; the public-object
-      endpoint overriding per-object metadata (which may behave
-      differently once the bucket is private and reads are signed,
-      design §6); or a rule at the CDN layer — `cf-cache-status:
-      REVALIDATED` shows Cloudflare is in the path and honouring
-      revalidation. Done when the cause is identified and written into
-      design §1b, not when a plausible theory is named. This task is
-      cheap and it is the reason T2.4 is not guesswork.
+- [ ] T2.3 **Determine the storage origin's cache-control rule, and
+      whether anything we control reaches it** (design §1b, US-20).
+      Already established and recorded there, so do not redo it: every
+      object stores `cacheControl: max-age=3600`, every object is served
+      `no-cache`, and the override is **not** a bucket/project setting
+      (no such column exists on `storage.buckets`), **not** the
+      public-object endpoint (the authenticated path serves the same
+      header), and **not** the CDN edge (a `cf-cache-status: MISS`
+      response still carries it). The header comes from the storage API
+      origin.
+
+      What is left is narrow. Check first the unverified lead in §1b:
+      that Supabase's Smart CDN uses the stored `cacheControl` as the
+      **edge** TTL while deliberately serving browsers `no-cache` so
+      replacements propagate. If that is the mechanism, the stored value
+      is working as designed and there may be no remedy available on
+      this plan.
+
+      **This is a documentation/support question, not an experiment** —
+      the observable behaviour has already been measured about as far as
+      it can be from outside. Answer it against Supabase's own docs, and
+      if they do not settle it, ask Supabase support; do not keep
+      probing. **Timebox it**: if neither settles it, record "origin
+      behaviour, undocumented, treat as unavailable" in §1b and let T2.4
+      close on the third branch. An unanswerable question should end as
+      a recorded answer, not as an open task.
 - [ ] T2.4 Apply the remedy T2.3's answer implies, and verify it by the
       `cache-control` header **actually served to a browser** for a
       freshly uploaded photo — not by confirming an argument was passed,
       which is exactly the check that would pass today while changing
       nothing (design §1b, US-20).
-      - If the cause is per-object: set `cacheControl:
-        "31536000, immutable"` on the display-copy upload in
-        `UploadForm`, for all three quality modes. Existing objects keep
-        their current behaviour until re-uploaded, which the app never
-        does; a metadata backfill is possible and out of scope.
-      - **If the cause is server-side** (bucket setting, endpoint
-        behaviour, CDN rule) **this is not a `UploadForm` change at
-        all** — it is a configuration change with a different shape,
-        different review, and probably a README/setup step beside the
-        existing Supabase ones. Record which it turned out to be.
+      - *Per-object* — **now unlikely** on T2.3's evidence: set
+        `cacheControl: "31536000, immutable"` on the display-copy upload
+        in `UploadForm`, for all three quality modes. Existing objects
+        keep their current behaviour until re-uploaded, which the app
+        never does; a metadata backfill is possible and out of scope.
+      - *Server-side but reachable* — **this is not a `UploadForm`
+        change at all**: a project or platform setting, with a different
+        shape, different review, and probably a README/setup step beside
+        the existing Supabase ones.
+      - *Not available on this plan* — close T2.4 as "not possible" with
+        the reason recorded in §1b. That is a legitimate outcome; do not
+        invent a workaround to avoid it. The underlying risk does not
+        close with the task: design §1b names client-side preloading of
+        the next slide as the direction to spec instead, deliberately
+        not designed here.
+
+      Record which of the three it turned out to be.
       **Priority is unchanged, and the justification is reliability, not
       bytes.** Bandwidth is already near the floor because `no-cache`
       plus an `ETag` yields zero-byte `304`s; what the current header
@@ -168,7 +187,10 @@ Only blocks Phase 3. Phases 1-2 can proceed in parallel.
       because of `304`s. Write the numbers into this file rather than
       ticking the box bare. Run it against a photo uploaded *after*
       T2.4, since if the remedy turns out to be per-object it will not
-      affect the existing library.
+      affect the existing library. **If T2.4 closed as "not possible"**,
+      this task does not fail — it changes job: record (a), (b) and (c)
+      as the measured residual risk an event carries on a bad network,
+      so the decision to live with it is made against numbers.
 - [ ] T5.6 Redeploy to production.
 
 ## Depends on / pairs with

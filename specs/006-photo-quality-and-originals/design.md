@@ -295,11 +295,49 @@ than assumed: known-immutable third-party assets fetched over the same
 path arrive with their long `max-age`/`immutable` headers intact, so
 nothing in the measuring environment is rewriting `cache-control`.
 
-**Fact 3 — something overrides the stored value, and we do not know
-what.** A per-object `max-age=3600` is being served as `no-cache`. The
-cause is **not established**, and no spec text should assume one. This
-is recorded as an open question rather than smoothed over, because the
-obvious remedy depends entirely on the answer (see below).
+**Fact 3 — the origin emits `no-cache` regardless of the stored value.**
+A per-object `max-age=3600` is served as `no-cache`, and the source of
+that has been narrowed by elimination rather than guessed at:
+
+- **Not a bucket or project setting.** The full `storage.buckets` row
+  for `photos` is `public=true`, `type=STANDARD`,
+  `file_size_limit=8388608`, `avif_autodetection=false`,
+  `allowed_mime_types=null`, `owner=null`,
+  `versioning_status=DISABLED`, `lifecycle_configuration=null`. Every
+  column on that table was listed: **there is no cache-control column**,
+  so a bucket-level override is not merely unset, it is not
+  expressible.
+- **Not the public-object endpoint.** The same object fetched both ways
+  returns the same header:
+
+  ```
+  PUBLIC         /storage/v1/object/public/photos/<path>
+                 cf-cache-status: REVALIDATED    cache-control: no-cache
+  AUTHENTICATED  /storage/v1/object/photos/<path>   (anon key)
+                 cf-cache-status: MISS           cache-control: no-cache
+  ```
+
+- **Not the CDN edge.** The authenticated fetch above is
+  `cf-cache-status: MISS` — not served from Cloudflare — and still
+  carries `no-cache`. The header is therefore emitted by the **storage
+  API origin itself**, not added on the way out.
+
+So the stored `cacheControl` (confirmed in each object's metadata JSON
+alongside `eTag`, `size` and `mimetype`) is not what any client receives
+on either path, and the remaining question is no longer "why" but
+narrower: **what the origin's rule actually is, and whether any
+project-level setting reaches it.**
+
+**A lead, explicitly not an answer.** Supabase's Smart CDN is documented
+to use the stored `cacheControl` as the **edge** TTL while serving
+browsers `no-cache`, so that replacing an object propagates promptly. If
+that is the mechanism, then the stored value is working as designed, the
+browser round trip is intended platform behaviour, and the remedy is not
+an upload argument at all — it may not be available to us on this plan
+at all. **This has not been verified** and must not be written up as the
+cause until it is. It is recorded because it is the first thing the next
+person should check, and because it is the hypothesis that, if true,
+changes what T2.4 can even attempt.
 
 ### What this means for egress: already close to the floor
 
@@ -337,34 +375,49 @@ it is to remove.
 ### What to do about it (T2.3, then T2.4)
 
 The remedy everyone reaches for first is "pass
-`cacheControl: 31536000, immutable` at upload". **That may well do
-nothing**, and the spec must not pretend otherwise: a stored
-`max-age=3600` is already being overridden down to `no-cache`, so there
-is no reason to believe a stored `31536000` would survive the same path.
-Shipping it blind risks a change that verifies green against the stored
-metadata and alters nothing a browser sees — which is precisely why the
+`cacheControl: 31536000, immutable` at upload". On the evidence in fact
+3, **that will probably do nothing**: if the origin emits `no-cache`
+irrespective of the stored value, passing a longer one changes the
+stored value and changes nothing a browser sees. Shipping it blind
+produces a change that verifies green against the stored metadata and
+alters no client behaviour at all — which is precisely why the
 verification step is written against the **served** header rather than
 the argument passed. That distinction is load-bearing, not pedantic.
 
 So the work splits in two, and the order is the point:
 
-1. **T2.3 — establish why the served header does not match the stored
-   metadata.** Candidates worth checking, none confirmed: a project- or
-   bucket-level storage setting; the public-object endpoint overriding
-   per-object metadata (which, if true, may behave differently once the
-   bucket is private and reads are signed — see §6); or a rule at the
-   CDN layer, which `cf-cache-status: REVALIDATED` shows is in the path
-   and honouring revalidation. Answer recorded here, in this section.
+1. **T2.3 — determine the origin's rule, and whether anything we control
+   reaches it.** Fact 3 has already eliminated the bucket/project
+   setting and the public endpoint, and localized the header to the
+   storage API origin, so this starts from a narrow question rather than
+   an open one. Check the Smart CDN lead first. Answer recorded here, in
+   this section, with its evidence.
 2. **T2.4 — apply whatever remedy that answer implies**, and verify it
-   by the header actually served to a browser. If the cause is
-   per-object, this is the one-argument change to `UploadForm` originally
-   imagined, applying to all three quality modes. **If the cause is
-   server-side — a bucket setting, an endpoint behaviour, or a CDN rule
-   — then it is not a `UploadForm` change at all**, and the shape,
-   effort and reviewability of the task are different. Say which it
-   turned out to be.
+   by the header actually served to a browser. Three possible shapes,
+   and the likely one is no longer the first:
+   - *Per-object* (now unlikely): the one-argument `UploadForm` change
+     originally imagined, applied to all three quality modes.
+   - *Server-side but reachable*: a project or platform setting, not a
+     `UploadForm` change at all — different shape, different review, and
+     probably a README/setup step beside the existing Supabase ones.
+   - *Not available to us*: if `no-cache` is intended platform behaviour
+     on this plan, there is no header remedy and T2.4 closes as "not
+     possible", with the reason recorded. That is an acceptable outcome
+     for this task and must not be worked around by inventing one.
 
-**The justification is reliability, not bytes, and it survives either
+   Say which it turned out to be, whichever it is.
+
+**If there is no header remedy, the problem does not go away.** The
+per-slide origin round trip is still a projector stalling on a bad
+network, and principle 3 still applies; what changes is that the fix has
+to move into the client — preloading the next slide's image ahead of the
+advance, so a revalidation is in flight during the five seconds before
+it is needed rather than at the moment it is displayed. That is **not
+designed here and not in this feature**; it is named so that a "not
+possible" answer to T2.4 closes the task without quietly closing the
+risk.
+
+**The justification is reliability, not bytes, and it survives every
 answer.** `immutable` (or whatever produces the same effect) tells the
 client it may reuse what it holds *without asking*, which removes the
 per-slide origin round trip. The byte saving is small, because the 304s
@@ -381,9 +434,10 @@ Two caveats the implementer owns:
   metadata, they keep that until re-uploaded, which the app never does,
   so the round trips persist for the existing library and stop only for
   photos uploaded afterwards — a backfill re-setting metadata is
-  possible and is not in scope here. If the cause is server-side, the
-  fix likely applies to old and new objects alike and no backfill is
-  needed. Another thing T2.3's answer decides.
+  possible and is not in scope here. On fact 3's evidence this is the
+  unlikely branch: a server-side cause would apply to old and new
+  objects alike and need no backfill. Another thing T2.3's answer
+  decides.
 - **Signed URLs can undo it.** See §6: a signature that differs per
   request produces a URL the client has never seen, which defeats
   `immutable` completely and turns every slide into a full 200. This is
