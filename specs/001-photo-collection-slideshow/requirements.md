@@ -147,5 +147,16 @@ services, so it costs nothing to operate at scout-troop scale.
   organizer moderation/delete — not on access control of individual
   files. This is an accepted tradeoff for a free, frictionless MVP and
   must be stated to organizers (e.g., "don't use for sensitive photos").
+
+  **Amended.** The clause above was written about a proof of concept and
+  is no longer the project's position. `CONSTITUTION.md` principle 2
+  says photographs of identifiable young people are the most sensitive
+  thing this system holds — so "don't use it for sensitive photos" is
+  advice the product cannot follow, because sensitive photos are the
+  product. Access control of individual files is now **decided**:
+  private bucket, reads signed under the same RLS predicate that governs
+  the rows (Feature 006 design §6; `CONSTITUTION.md` decision 1). Until
+  that ships the sentence above still describes the live system, which
+  is why it is amended rather than deleted.
 - Only a photo's display name (optional, guest-supplied) is collected;
   no other guest PII is stored.

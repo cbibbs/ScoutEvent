@@ -85,5 +85,9 @@ passing, and manually verified where noted).
 ## Deferred (see design §7 — not part of this feature's completion)
 
 - [ ] Bulk ZIP download of event photos.
-- [ ] Private storage bucket + signed URLs.
+- [ ] Private storage bucket + signed URLs. **No longer just deferred —
+      decided** (Feature 006 design §6: private Supabase bucket, RLS-gated
+      signed URLs; originals separately on R2 per §1a). Still unbuilt, so
+      still unchecked; tracked as `CONSTITUTION.md` decision 1 rather
+      than waiting here.
 - [ ] Scheduled keep-alive ping to prevent Supabase free-project pausing.

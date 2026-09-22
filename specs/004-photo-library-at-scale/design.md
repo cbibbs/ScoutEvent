@@ -205,6 +205,26 @@ Recommendation: ship pagination + lazy-loading first (free); revisit
 real thumbnails only if that's still not enough once there's a real
 event to measure against.
 
+**Two later decisions strengthen option 1 without overturning this
+recommendation** (Feature 006 design §1a/§1b/§6):
+
+- Feature 006 weighed moving display copies to a store with free egress
+  and decided against it, partly on the grounds that this grid's egress
+  is fixable locally — by cache headers and, if that is not enough, by
+  these thumbnails. So option 1 is now the standing answer to "the grids
+  cost too much bandwidth", not one of two candidates.
+- Display copies are also decided to become private, read through signed
+  URLs. A grid page then needs a signature per visible object. Supabase
+  can sign a batch in one call, so this is one extra round-trip per page
+  rather than one per cell — but thumbnails would halve nothing here and
+  do reduce how many bytes each signature unlocks. Whoever builds the
+  private-bucket feature should sign per page, not per cell, and should
+  not let the signing work quietly reintroduce the unbounded query this
+  feature removed.
+
+The measure-first advice stands; what changed is which option wins if
+the measurement says act.
+
 ## 6. Mobile breakpoint (US-16)
 
 Manage Event is desktop-first — search, filters, sort, and bulk

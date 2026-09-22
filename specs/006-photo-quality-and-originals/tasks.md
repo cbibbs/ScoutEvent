@@ -3,26 +3,42 @@
 Each task is checked off `[x]` only once actually implemented (and,
 where applicable, verified) — per `specs/CONSTITUTION.md`.
 
-**Decision made:** originals go to Cloudflare R2, not Supabase Storage
-(design §1a). That was driven by egress rather than capacity — a bulk
-download of one archived event would consume most of Supabase's monthly
-allowance — and it resolves the privacy question §6 previously left
-open, since R2 is private by default and read through expiring signed
-URLs. Phases 1-2 (Fast and Sharp) touch neither store's arrangement and
-can ship independently of the R2 work.
+**Decision made (design §1a):** originals go to Cloudflare R2; display
+copies stay in Supabase Storage. Both halves follow one rule — image
+bytes live with the rule that decides who may read them, unless egress
+makes that impossible. Originals are the only case where it does: a bulk
+download is ~1.2GB against a 2GB monthly allowance and no cache can
+help. Display copies stay because their access rule is live RLS that R2
+cannot see, their egress is cacheable (T2.3), and the projector must not
+gain a second vendor it can die on.
+
+**Also decided (design §6):** display copies stop being public-read —
+private Supabase bucket, reads through RLS-gated signed URLs. **Not
+built here.** It touches the read path of every screen and has its own
+hard problem (an unattended slideshow re-minting signatures), so it is
+its own feature; `CONSTITUTION.md` open decision 1 tracks it. Nothing in
+this feature may be read as re-endorsing public-read display copies.
+
+Phases 1-2 (Fast and Sharp) touch neither store's arrangement and can
+ship independently of the R2 work.
 
 **One fact to confirm before Phase 0:** whether R2 requires a payment
 method on file within the free allowance, and whether exceeding 10GB
 refuses writes or silently bills. The constitution forbids silently
-incurring charges; if R2 bills silently past the ceiling, revisit
-design §1a rather than proceeding.
+incurring charges. **If it bills silently: do not use R2, and cut
+Archive mode from this feature** — ship Phases 1-2 only, and do not fall
+back to putting originals in Supabase Storage, which reintroduces both
+problems R2 was chosen to solve (design §1a, "what this costs").
 
 ## Phase 0 — R2 setup (design §1a)
 
 Only blocks Phase 3. Phases 1-2 can proceed in parallel.
 
 - [ ] T0.1 Confirm the billing question above before doing anything
-      else.
+      else. **Hard gate**: no bucket, no credentials, no endpoint code
+      until it is answered, and the answer is recorded in design §1a
+      rather than remembered. A "silently bills" answer cuts Phase 3 and
+      Archive mode rather than being worked around.
 - [ ] T0.2 Create the R2 bucket (private, no public access), an API
       token scoped to just that bucket, and a CORS rule permitting `PUT`
       from the app's origins. The CORS rule is easy to forget and fails
@@ -30,6 +46,15 @@ Only blocks Phase 3. Phases 1-2 can proceed in parallel.
 - [ ] T0.3 Add the credentials to Vercel environment variables and
       `.env.example`, and document the setup in the README beside the
       existing Supabase steps.
+- [ ] T0.4 Confirm the two Supabase numbers design §1b's reasoning is
+      sized against: the **current** free egress allowance (the specs
+      have carried 2GB since Feature 001 and the published figure has
+      moved), and whether CDN-cached bytes are billed as egress. Record
+      both in `specs/PROJECT.md`'s free-tier table. Not a gate on
+      anything — but if cached bytes are billed at full price, say so in
+      design §1b, because the display-copy half of §1a is sized against
+      the assumption that they are not. This does not block Phase 3; it
+      blocks trusting T2.3's saving.
 
 ## Phase 1 — Schema & settings (US-18)
 
@@ -49,6 +74,15 @@ Only blocks Phase 3. Phases 1-2 can proceed in parallel.
       or 2560px accordingly; record `display_bytes` (design §1, §2).
 - [ ] T2.2 Confirm the mode change applies only to new uploads and
       nothing retroactively rewrites existing photos (US-18).
+- [ ] T2.3 Set a one-year immutable `cacheControl` on the display-copy
+      upload in `UploadForm` (design §1b, US-20). Today the call passes
+      only `contentType`, so supabase-js's one-hour default applies and
+      an all-day slideshow re-downloads every photo hourly for objects
+      that can never change. Applies to all three modes, not just
+      Archive. Verify by reading the `cache-control` response header on
+      a newly uploaded photo in the browser's network panel — the point
+      is the header that is actually served, not the argument that was
+      passed. Existing objects keep their old header; that is accepted.
 
 ## Phase 3 — Originals (US-19)
 
@@ -67,7 +101,10 @@ Only blocks Phase 3. Phases 1-2 can proceed in parallel.
       photo stays, the guest is not shown an error for it (US-19).
 - [ ] T3.5 Audit that no screen loads `original_path`: slideshow, review
       queue, one-at-a-time, and all library grids stay on
-      `storage_path` (design §4).
+      `storage_path` (design §4). Check `PhotoManager.tsx`,
+      `ReviewQueue.tsx` and `Slideshow.tsx` specifically — all three
+      build image URLs from `storage_path` today and are where a
+      well-meaning "show the full-quality one" change would land.
 
 ## Phase 4 — Storage visibility (US-20)
 
@@ -92,13 +129,27 @@ Only blocks Phase 3. Phases 1-2 can proceed in parallel.
 - [ ] T5.4 Confirm the 4K claim rather than trusting the arithmetic:
       view a Sharp photo and a Fast photo on a 4K display and check the
       difference is real and worth the storage.
-- [ ] T5.5 Redeploy to production.
+- [ ] T5.5 Confirm the egress claim the same way: leave a slideshow
+      running over several full passes and check in the network panel
+      that photos already shown are served from cache rather than
+      re-fetched (US-20, design §1b). This is the measurement §1a's
+      display-copy decision rests on; if it fails, §1a says to re-argue
+      that half rather than assume it.
+- [ ] T5.6 Redeploy to production.
 
 ## Depends on / pairs with
 
 - [ ] Bulk ZIP download (deferred since Feature 001 §7) — originals are
       only worth keeping if there's a way to get them out; schedule with
       this (design §7).
-- [x] Private storage + signed URLs for originals — resolved by choosing
-      R2 (design §1a, §6). Originals are private by construction; only
-      the public-read display copies remain on the Feature 001 tradeoff.
+- [x] Private storage + signed URLs **for originals** — resolved by
+      choosing R2 (design §1a, §6). Originals are private by
+      construction: no public URL exists for one.
+- [ ] Private storage + signed URLs **for display copies** — the
+      direction is decided (design §6: private Supabase bucket, reads
+      signed under the existing RLS predicate), the work is not done and
+      is not in this feature. Its own feature; `CONSTITUTION.md` open
+      decision 1 holds the entry. Until it ships, every display copy
+      ever uploaded stays permanently fetchable by URL, including after
+      rejection — which is the state Feature 001 §3 accepted and this
+      project has now decided against.

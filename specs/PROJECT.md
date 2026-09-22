@@ -23,8 +23,8 @@ wins.
 | Hosting | Vercel (Hobby) | Free. Hobby forbids commercial use; fine for a unit running its own events, not fine if this is ever sold or run for others |
 | Auth | Supabase Auth, email magic link | Organizers only. Guests never authenticate |
 | Database | Supabase Postgres | RLS is the access control layer; the browser talks to it directly |
-| Display photos | Supabase Storage, public-read bucket | 1600px/2560px copies — every screen reads these |
-| Original photos | Cloudflare R2, private bucket | Specced in Feature 006, not yet built. Chosen for free egress, not capacity — see that design's §1a |
+| Display photos | Supabase Storage | 1600px/2560px copies — every screen reads these. **Public-read today; decided to become a private bucket read through signed URLs** (Feature 006 design §6, `CONSTITUTION.md` decision 1). Not yet built |
+| Original photos | Cloudflare R2, private bucket | Specced in Feature 006, not yet built, and gated on an unanswered billing question (T0.1). Chosen for free egress, not capacity, and only for originals — see that design's §1a for why display copies did not follow |
 | Realtime | Supabase Realtime (postgres_changes) | Always paired with a polling fallback; see "Realtime" below |
 | QR codes | `qrcode.react` | Renders locally, no API call, no rate limit |
 | Image compression | `browser-image-compression` | Runs in the guest's browser before upload |
@@ -35,14 +35,29 @@ write. Feature 006 spends that deliberately for originals only — if R2
 is misconfigured or abandoned, every screen still works, because only
 the download path reads from it.
 
+**The rule that keeps it that way** (Feature 006 design §1a, which
+argues it): *image bytes live in the same store as the rule that decides
+who may read them, unless egress makes that impossible.* Display copies
+are read under a live, per-photo, status-dependent RLS predicate, so
+they stay where that predicate is; an original's rule is static
+("the owning organizer, on an explicit download"), cheap to restate in
+one route handler, and its egress — ~1.2GB for one bulk download — is
+the single case no cache header can rescue. Apply the same test before
+moving any other bytes; the answer is not "R2 is free" by default.
+
 ## Where the data lives
 
 - **Postgres**: `events` and `photos` rows. Photo rows carry storage
   paths, never image bytes.
-- **Supabase Storage**, bucket `photos`, public-read: display copies at
-  `{event_id}/{uuid}.jpg`. Public-read with unguessable paths is an
-  accepted tradeoff whose production status is an open question — see
-  `CONSTITUTION.md`.
+- **Supabase Storage**, bucket `photos`: display copies at
+  `{event_id}/{uuid}.jpg`. The bucket is **public-read today**, which
+  means every display copy ever uploaded is fetchable by anyone holding
+  its URL, permanently, including after the photo is rejected or pulled
+  from the slideshow. That is no longer an accepted tradeoff: it has
+  been decided against (Feature 006 design §6 — private bucket, reads
+  signed under the same RLS predicate that already governs the `photos`
+  rows) and is waiting on the feature that implements it. Treat it as a
+  known live exposure, not a design choice.
 - **R2**, private (Feature 006): originals at
   `originals/{event_id}/{uuid}.jpg`, reachable only via short-lived
   presigned URLs.
@@ -60,6 +75,16 @@ across every feature and should keep holding:
 2. **Organizers see and change only their own events' photos.** Every
    organizer-facing query relies on this rather than filtering in the
    client.
+3. **Image bytes should be governed by the same predicate as the rows
+   that point at them.** Decided, not yet true: the `photos` bucket is
+   public-read, so today rule 2 governs the row and nothing governs the
+   file — rejecting a photo hides the row and leaves the JPEG fetchable.
+   Feature 006 design §6 settles the direction (private bucket, signing
+   gated by an RLS policy on `storage.objects` mirroring the one on
+   `photos`). This is also the reason display copies did not follow
+   originals to R2: a store that cannot see `status` cannot enforce the
+   predicate, and re-implementing it elsewhere is the mistake Feature
+   007's `photo_limit` pre-check already made once.
 
 ## Free-tier limits
 
@@ -67,10 +92,10 @@ across every feature and should keep holding:
 |---|---|---|
 | Supabase database | 500MB | Metadata only; storage binds long before this |
 | Supabase storage | 1GB | ~1,500 display copies. The real capacity constraint |
-| Supabase egress | 2GB/mo | Slideshow re-downloads drive this. A bulk download of full-resolution photos would blow it in one click — which is why originals went to R2 |
+| Supabase egress | 2GB/mo (**confirm** — Feature 006 T0.4; this figure has been carried since Feature 001 and the published one has moved) | Slideshow re-downloads drive this, and they are avoidable: display objects are immutable but are uploaded without a `cacheControl`, so supabase-js's one-hour default applies and an all-day slideshow re-fetches everything hourly (Feature 006 §1b, T2.3). A bulk download of full-resolution photos is the case no cache fixes — which is why originals went to R2 |
 | Supabase auth email | a few per hour | Fails *silently*: the app says "link sent" and nothing arrives. Organizers only |
 | Supabase project pause | after 7 idle days | Wake it before an event |
-| R2 storage | 10GB | ~2,500 originals. Confirm billing behaviour at the ceiling before relying on it |
+| R2 storage | 10GB | ~2,500 originals. **Unverified and gating**: whether a payment method is required inside the free allowance, and whether the ceiling refuses writes or bills silently (Feature 006 T0.1). If it bills silently, Archive mode is cut rather than moved to Supabase |
 | R2 egress | unmetered | The reason it was chosen |
 | Vercel bandwidth | 100GB/mo (Hobby) | Far above need |
 

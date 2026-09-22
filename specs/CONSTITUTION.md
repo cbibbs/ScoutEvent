@@ -129,9 +129,13 @@ These came out of the production readiness review. Each is a judgment
 call for the project owner, not something to settle by default. None
 block a demo; several block real events with youth in frame.
 
+A row shown struck through has been **decided** and is kept here until
+the work implementing it lands, because the exposure it describes is
+live until then. A decision recorded but not built is not a mitigation.
+
 | # | Decision | Why it's open |
 |---|---|---|
-| 1 | Do display copies stay public-read? | Feature 006 makes originals private via R2, but 1600px copies stay fetchable by URL forever, including after rejection. Fixing it means signing every slideshow frame and grid thumbnail — real cost on the hot path |
+| 1 | ~~Do display copies stay public-read?~~ **Decided: no.** Waiting on a feature to build it | Resolved in Feature 006 design §6 and §1a, which were re-argued rather than inherited. Display copies become a **private Supabase bucket read through signed URLs gated by the existing RLS predicate** — not a move to R2, because a display copy's access rule is live, per-photo and status-dependent, and belongs next to the rows that hold it; and because R2 on the read path would put a second vendor between the projector and its next frame. What remains is scheduling and one hard problem: an unattended slideshow must re-mint signatures for hours with nobody present, and a signature long enough to avoid that is a public URL with extra steps. **Until that feature ships, every display copy ever uploaded stays permanently fetchable by URL, including after rejection** — that is a known live exposure now, not an accepted tradeoff |
 | 2 | Abuse protection on guest upload | No rate limit, no cap, no accountability. Feature 005 put the join QR permanently on a screen in a public room, so everyone present can post to it; with moderation off it reaches the screen unreviewed. Those two features interact in a way neither spec considered |
 | 3 | Multiple organizers per event | Out of scope since Feature 001. A sole owner is an availability risk mid-event, and sole adult control over youth photos sits awkwardly against two-deep leadership norms |
 | 4 | Retention, consent, deletion | Photos of minors kept indefinitely, no consent capture, no deletion path beyond clicking each photo |

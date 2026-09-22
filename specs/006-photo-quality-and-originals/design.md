@@ -12,10 +12,12 @@ model (design §2-3 there).
 | **Sharp** | 2560px, ~1.5MB | — | ~650 photos |
 | **Archive** | 1600px, ~0.6MB | original, ~3-5MB | ~1,500 photos, archives capped by R2 (~2,500 originals) |
 
-The two copies live in **different stores** — see §1a. Display copies
-stay in Supabase Storage where the rest of the app already reads them;
-originals go to Cloudflare R2, whose free tier is 10GB and, critically,
-charges nothing for egress.
+The two copies live in **different stores**, and §1a is where that
+split is argued rather than assumed: display copies stay in Supabase
+Storage because the rule deciding who may read them lives there and
+their egress is cacheable; originals go to Cloudflare R2 because a bulk
+download of them is the one transfer no cache can make affordable. R2's
+free tier is 10GB and, critically, charges nothing for egress.
 
 Why those pixel numbers, since the organizer-facing wording hides them:
 
@@ -45,46 +47,232 @@ Sizes are tuning constants, not protocol. Note that Sharp roughly
 triples slideshow egress versus Fast, which matters more than storage
 for a screen that runs all day; Fast is the bandwidth-safe choice.
 
-## 1a. Why originals go to R2, not Supabase
+## 1a. Where each copy lives, and why the two differ
 
-Storage is the obvious reason — 10GB against Supabase's 1GB, which is
-already shared with display copies — but it is not the deciding one.
+The rule this section applies, stated once so both halves are decided by
+the same test rather than by habit:
 
-**Egress is.** The entire point of keeping originals is getting them
-back out again, and a bulk download is the largest single transfer this
-app will ever do: 300 archived photos at ~4MB is ~1.2GB, most of
-Supabase's 2GB monthly allowance spent in one click, on the one action
-the archive exists for. An organizer who downloads two events in a month
-would exhaust it. R2 does not charge for egress at all, which turns the
-feature from "technically possible, practically rationed" into something
-an organizer can just use.
+> **Image bytes live in the same store as the rule that decides who may
+> read them — unless egress makes that impossible.**
 
-**It also settles the privacy question** that §6 would otherwise leave
-open. R2 buckets are private by default and are read through presigned,
-expiring URLs — which is exactly the "private bucket + signed URLs"
-mitigation deferred since Feature 001 §7. Full-resolution photographs of
-children therefore never sit behind nothing but an unguessable URL.
+Authorization is the default pull, because this app's access control is
+RLS next to the rows (PROJECT.md, "Access control") and every copy of a
+rule kept somewhere else is a copy that can drift. Egress is the one
+force allowed to override it, because an allowance that runs out takes
+the whole project down with it, not just one feature.
 
-What it costs, stated honestly:
+Applied to the two copies, that test gives different answers, and the
+reasons are worth writing down because an earlier version of this
+section asserted the same split without arguing it.
 
-- **A second vendor.** Feature 001 §1 chose one vendor deliberately, for
-  fewer moving parts and fewer free tiers to watch. This spends that on
-  purpose, and only for originals: if R2 is misconfigured, unreachable,
-  or abandoned later, every screen in the app keeps working, because
-  nothing but the download path reads from it.
-- **A server-side signing endpoint** (§3a) — browsers cannot write to R2
+### Originals leave, because egress makes keeping them impossible
+
+The entire point of keeping originals is getting them back out again,
+and a bulk download is the largest single transfer this app will ever
+do: 300 archived photos at ~4MB is ~1.2GB, most of Supabase's 2GB
+monthly allowance spent in one click, on the one action the archive
+exists for. An organizer who downloads two events in a month exhausts
+it. **No caching softens that** — a bulk download is a one-shot transfer
+of bytes the recipient by definition does not already have, so it costs
+full price every time. R2 does not charge for egress at all, which turns
+the feature from "technically possible, practically rationed" into
+something an organizer can just use.
+
+Capacity agrees but does not decide: 10GB against a 1GB Supabase bucket
+already shared with every display copy.
+
+And the authorization half of the test is satisfied cheaply here.
+An original's access rule is **static and coarse**: *the organizer who
+owns the event, on an explicit download action.* One predicate, no
+anonymous caller, evaluated a handful of times per event. Restating that
+check inside a single route handler (§3a) is a small, auditable
+duplication of RLS — the same shape as `submit_photo()`, which PROJECT.md
+already blesses. So the override is bought at a price the rule permits.
+
+### Display copies stay, and the same test is what keeps them
+
+Three reasons, in the order they actually carry weight. The egress
+argument is last, and deliberately so: it is the one that moved when it
+was measured (§1b), and a conclusion that rests on a number which can
+move is a conclusion waiting to be reopened.
+
+**1. A display copy's access rule is per-photo, status-dependent, and
+changes while the event is running.** Anonymous callers may read a photo
+only while it is `approved` **and** `in_slideshow` (Feature 002 design
+§3); the owning organizer sees all of their own at any status. Rejecting
+a photo, or pulling it from the slideshow, flips that mid-event from a
+phone at the back of the room. R2 knows nothing about `status`,
+`in_slideshow`, or `organizer_id`, so every signed read would make our
+route handler re-implement a predicate that already exists, correctly,
+in RLS — and re-implement the *live* version of it, on every screen, for
+anonymous callers. Feature 007 is this project's record of what a second
+copy of a server-side rule costs: a client-side `photo_limit` pre-check
+drifted from the server's and refused every guest at an event after the
+organizer raised the limit. One static duplicated predicate for
+originals is a rounding error. A constantly-changing one on the read
+path of every screen is a defect with a date on it.
+
+This is the load-bearing reason. It does not depend on any allowance,
+any measurement, or any vendor's pricing page.
+
+**2. Blast radius, against "an event happens once".** As scoped here, if
+R2 is misconfigured, unreachable, or abandoned, every screen still
+works, because only the download path reads from it — a failure between
+events, which is an inconvenience. Move display copies and the same
+failure is a black projector in a room full of people, with no fallback,
+because the bytes would exist in exactly one place. Feature 001 §1 chose
+one vendor deliberately; the right amount of that to spend is the
+smallest thing that cannot be done any other way, and the projector is
+not it.
+
+**3. The egress case for moving them is weaker than it looks, and
+weaker than an earlier draft of this section claimed.** That draft put
+an all-day slideshow at ~3.4GB, above the whole monthly allowance, on
+the assumption that display objects carry a one-hour cache header and
+are therefore re-downloaded hourly. **That was assumed, not measured,
+and the measurement says otherwise** (§1b): the objects are served
+`cache-control: no-cache` with an `ETag`, and `no-cache` means
+"revalidate before reuse", not "do not store". A warm client
+revalidates and gets a **304 with a zero-byte body**, so an 8-hour
+projector day transfers each photo roughly *once* — tens of megabytes,
+not gigabytes — plus header-sized revalidation traffic. The grids behave
+the same way for anything already seen.
+
+So display-copy egress was never the pressure the originals' bulk
+download is, and the gap between the two is wider than the earlier draft
+made it: ~1.2GB in one irreducible click against a projector day of tens
+of megabytes. **Correcting this number strengthens the conclusion rather
+than threatening it** — the less pressing the ceiling, the weaker the
+case for buying a second vendor to relieve it. Had the number gone the
+other way, reasons 1 and 2 would still have decided it.
+
+What the measurement *did* surface is a different cost, and not an
+egress one: `no-cache` forces a round trip to origin on every slide
+advance for bytes the client already holds. §1b deals with it, because
+it is a reliability problem on exactly the network Feature 001 compressed
+to 0.6MB to survive — and it is a problem that gets *worse*, not better,
+if the bytes move further away.
+
+**The presigned-expiry problem, not waved away.** It cuts both ways and
+deserves its arithmetic:
+
+- Cheaper than it looks: SigV4 presigning is a local HMAC, not a call to
+  the storage provider. Signing 300 keys for a grid page is one
+  round-trip to our own route handler and no R2 operations at all, and
+  it consumes none of R2's 1M/10M monthly Class A/B allowances.
+- Expensive where it counts: the slideshow runs **unattended for hours**.
+  A signature that expires at 21:40 in an empty hall turns every frame
+  into a broken image, and the only cure is re-minting — which makes the
+  screen newly dependent on a serverless function staying reachable for
+  the length of the show, on top of the two subscriptions it already
+  self-heals. Robustness can be bought with a long expiry, but a
+  long-lived signed URL is a public URL with extra steps: it hands back
+  the privacy that was the reason for signing. That dial has no setting
+  that is both safe and unattended-proof without re-minting logic.
+
+That last point applies to *any* signing scheme, including the Supabase
+one §6 now commits to — it is a problem the follow-on feature must
+solve, not a reason to prefer one store. What it does rule out is taking
+it on **for bytes whose egress a cache header fixes, while also putting a
+second vendor on the projector's critical path.**
+
+### Decision
+
+- **Originals → Cloudflare R2**, private, presigned write (§3a) and
+  presigned read — gated on the billing check ("what this costs", below;
+  `tasks.md` T0.1). Unchanged from the previous
+  version of this section, but now decided by a stated rule rather than
+  by the egress number alone.
+- **Display copies → stay in Supabase Storage**, because their
+  authorization rule lives there, their egress is cacheable, and the
+  projector should not gain a second vendor it can die on.
+- **Display copies stop being public-read** — private bucket, reads
+  through signed URLs minted under the existing RLS predicate. This is
+  the same "private bucket + signed URLs" mitigation deferred since
+  Feature 001 §7, applied where it belongs. It is scoped as its own
+  feature, not folded in here; §6 records what it changes and why it is
+  separate.
+
+The previous version of this section claimed the privacy mitigation for
+originals only, and justified the split for display copies on the
+grounds that they "stay in Supabase Storage where the rest of the app
+already reads them". That was inertia, and it left the project's most
+exposed asset — every photo of every child, fetchable by anyone holding
+a URL, forever, including after rejection — resting on a sentence about
+convenience.
+
+### What this costs, stated honestly
+
+- **A second vendor.** Feature 001 §1 chose one deliberately, for fewer
+  moving parts and fewer free tiers to watch. This spends that on
+  purpose and only for originals, so the failure mode stays "downloads
+  are broken between events" rather than "the screen is dead during
+  one."
+- **A server-side signing endpoint** (§3a). Browsers cannot write to R2
   without a presigned URL, and R2 credentials must never reach the
-  client. This is new surface for an app that has had no backend of its
-  own. A serverless route handler is still nothing to patch or scale, so
-  it bends rather than breaks the constitution's "no app-specific
-  backend to operate", but it is a real change in shape and should be
-  recognized as one.
-- **Verify before committing:** R2 is understood to require a payment
-  method on file even within the free allowance. The constitution
-  forbids *silently* incurring charges, so confirm both that fact and
-  what happens at the 10GB boundary — whether it refuses writes or
-  starts billing — before this ships. If it bills silently, that changes
-  the recommendation.
+  client. A serverless route handler is still nothing to patch or scale,
+  so it bends rather than breaks the constitution's "no app-specific
+  backend to operate" — but it is a real change in shape. Keeping
+  display copies on Supabase is also what keeps that surface *narrow*:
+  it stays a write-path endpoint, Archive mode only, a few calls per
+  upload, and it is off the read path of every screen. Moving display
+  copies would have promoted it to the busiest route in the app,
+  anonymous-facing, signing hundreds of keys per page view, with a cold
+  start standing between the projector and its next frame. That is the
+  difference between bending the rule and relocating it.
+- **T0.1, and what happens if it fails.** R2 is understood to require a
+  payment method on file even within the free allowance, and the
+  behaviour at the 10GB ceiling — refuse writes, or start billing — is
+  **unverified**. The constitution forbids silently incurring charges
+  (principle 4), so this is a hard gate on Phase 3 and nothing about R2
+  should be built before it is answered.
+
+  **If R2 bills silently past 10GB, the recommendation becomes: do not
+  use R2, and cut Archive mode from this feature.** Ship Phases 1-2
+  (Fast and Sharp), which touch neither store's arrangement. Do *not*
+  fall back to putting originals in Supabase Storage: that reintroduces
+  both problems this section spent its override on — 3-5MB files in the
+  1GB bucket that §5 already calls the real constraint, and a 1.2GB
+  download against a 2GB allowance — so it would be choosing the worse
+  option because the better one was unavailable. Keeping originals then
+  becomes its own decision, with its own vendor check (the same two
+  questions asked of any candidate) recorded per principle 4. The
+  display-copy half of this section does not depend on that answer and
+  stands either way.
+
+## 1b. Making display-copy egress cheap, since the decision leans on it
+
+§1a keeps display copies on a metered store on the strength of two
+mitigations. An argument that rests on unbuilt work has to schedule it,
+so:
+
+- **Immutable cache headers (in scope here, T2.3).** Upload display
+  copies with `cacheControl` set to a year (`31536000`, `immutable`)
+  instead of supabase-js's one-hour default. The objects are
+  content-addressed by UUID and are never rewritten, so there is nothing
+  to invalidate; delete removes the row and the object together. This is
+  a one-argument change to `UploadForm` and it is the single largest
+  egress reduction available to this project. It applies to Fast and
+  Sharp uploads too, so it is not Archive-specific.
+
+  It only affects objects uploaded *after* it ships. Existing objects
+  keep their one-hour header until re-uploaded, which is acceptable —
+  nothing is broken, the saving simply starts with new photos.
+- **Thumbnails (not in scope, Feature 004 §5 option 1).** Grid cells
+  fetching 0.6MB to draw a square is the other standing waste. §1a's
+  decision does not require thumbnails, but the case for them is now
+  stronger than Feature 004 left it: they cut grid egress by roughly an
+  order of magnitude, and once display reads are signed (§6) they also
+  cut the number of signatures a page needs. Feature 004's advice —
+  measure against a real event first — still holds.
+
+Two numbers to confirm rather than trust, since both mitigations are
+sized against them (T0.4): the **current** Supabase free egress
+allowance (this project's specs have carried 2GB since Feature 001; the
+figure has moved), and whether CDN-cached bytes count against it. If
+cached bytes are counted at full price, the cache-header mitigation is
+weaker than assumed and §1a's display-copy conclusion should be re-argued
+— not reversed by default, since reasons 2 and 3 stand on their own.
 
 ## 2. Data model
 
@@ -198,6 +386,10 @@ grids load `storage_path`. Only an explicit download action loads
 would sit below the display copy, giving a ladder of thumb → display →
 original, with each screen using the smallest that will do.
 
+(Once display reads are signed, §6, "loads `storage_path`" becomes
+"signs `storage_path`" — the rule is unaffected: a screen signs the
+display copy, only a download signs the original.)
+
 ## 5. Storage accounting and graceful degradation (US-20)
 
 Splitting the stores splits the budget, and the two behave differently
@@ -249,14 +441,103 @@ for an original, so there is nothing to leak that stays valid. Download
 links must therefore be minted per request and kept short-lived, and
 must never be embedded in a page that gets cached or shared.
 
-**Display copies remain public-read on Supabase**, unchanged. That is a
-deliberate, narrower version of the original tradeoff: the 1600px copy
-of a photo already being shown on a screen in a public room is a
-materially smaller exposure than the 12MP original, and moving it would
-mean signing every image in the slideshow and every grid thumbnail —
-touching the hot path this feature has otherwise been careful to leave
-alone. Worth revisiting on its own merits (see the production readiness
-review), but not as a side effect of this feature.
+### Display copies: decided, and it is not "unchanged"
+
+The previous version of this section said display copies "remain
+public-read on Supabase, unchanged", on the grounds that a 1600px copy
+of a photo already on a screen in a public room is a smaller exposure
+than the 12MP original. That defence does not survive contact with what
+public-read actually means here:
+
+- The URL is **permanent**. It outlives the slide, the event, and the
+  organizer's attention.
+- It survives **rejection**. Feature 001 §3 wrote this down as an
+  accepted MVP tradeoff — a rejected photo's file stays fetchable by
+  direct URL until someone deletes the photo. The one moderation action
+  whose entire purpose is "this should not be visible" does not make it
+  un-fetchable.
+- It survives **removal from the slideshow**, which Feature 002 US-9
+  promises is non-destructive and reversible — true of the row, not of
+  the file's reachability.
+- It is **not revocable**: once a URL has been seen, copied, put in a
+  browser history, or pasted into a group chat, there is no action in
+  the app that invalidates it short of deleting the photo.
+
+Against constitution principle 2 — these photographs are the most
+sensitive thing the system holds — "smaller than the original" is not a
+standard. **Decision: display copies stop being public-read.**
+
+**How: a private Supabase bucket read through signed URLs, not a move to
+R2.** §1a argues the store; this is the access-control half of the same
+decision, and Supabase wins it for a reason R2 cannot match — the
+predicate that decides who may read a display copy is already written,
+in SQL, next to the rows it reads:
+
+- Make the `photos` bucket private. Reads go through
+  `createSignedUrl(s)`, which is batchable, so a grid page costs one
+  call and not one per cell.
+- Gate signing with an RLS policy on `storage.objects` that mirrors the
+  policy already on `photos` (Feature 002 design §3): the object is
+  signable by an anonymous caller only while a `photos` row with that
+  `storage_path` is `approved` **and** `in_slideshow`, and by the owning
+  organizer at any status. The enforcement point stays RLS, per
+  PROJECT.md; no new endpoint, no second copy of the rule, and no
+  credentials anywhere near the client.
+
+What that buys is not secrecy from someone standing in the room — the
+slideshow is public by design and anyone who can see the screen can see
+the photos. It is **revocability and status-gating**: a rejected photo
+becomes unfetchable, a photo pulled from the slideshow becomes
+unfetchable, a leaked URL dies on its own, and nothing is enumerable or
+permanent. That is the exposure the constitution actually objects to.
+
+**Why it is not built in this feature.** It touches the read path of
+every screen in the app — slideshow, review queue, one-at-a-time, three
+paginated grids — which is the hot path this feature has deliberately
+left alone, and it has one genuinely hard problem of its own: a
+slideshow runs unattended for hours, so signatures must be re-minted
+without anyone present (§1a). Folding that into a feature about quality
+modes would put Phases 1-2, which touch neither store's arrangement,
+behind it. So it is scheduled as its own feature.
+
+**What happens to the photos already there.** Nothing moves: the objects
+stay at `{event_id}/{uuid}.jpg` in the same bucket, and no `photos` row
+changes, which is most of why this direction was chosen over relocating
+bytes to another vendor. The migration is a bucket flag plus a policy,
+not a copy job. But it is not a no-op either, and the follow-on feature
+owns these:
+
+- **Every existing public URL stops working at the moment of the flip.**
+  That is the point — it is the revocation this decision is for — but it
+  means any link previously copied out of the app, pasted into a chat,
+  or bookmarked dies. That is acceptable and should be stated to
+  organizers rather than discovered by them.
+- **Every screen must be converted in the same deploy as the flip**, or
+  it shows broken images. This is the one change in this project where
+  the code cannot go first and degrade gracefully (PROJECT.md,
+  "Migrations and deploy order") — the safe order is code that signs but
+  tolerates a still-public bucket, deployed first, then the flip.
+- **Signed URLs must not destroy the caching §1a leans on.** A browser
+  caches by full URL including query string, so a signature that differs
+  per request re-downloads every byte and quietly undoes T2.3. Mint
+  URLs with an expiry rounded to a fixed boundary (so every client in a
+  window gets a byte-identical URL) and re-sign on a schedule, not per
+  render. Getting this wrong converts a privacy improvement into an
+  egress regression, which is exactly the trade §1a refused.
+
+Two things that must not be lost in the handoff:
+
+- **The deferral is now bounded.** Feature 001 §7 listed "private
+  storage + signed URLs" as an open non-goal and it stayed open for five
+  features. It is no longer a "worth revisiting"; it is decided, and
+  what remains is scheduling. `CONSTITUTION.md`'s open decision 1
+  records it as such.
+- **This does not close Feature 007's byte-level risk.** A private
+  bucket changes who may *read*; guests still write directly to Storage
+  under a blanket anonymous INSERT policy, so the residual risk 007
+  records stays exactly as it recorded it. The fix for that is routing
+  guest *writes* through a gated signed URL, the shape §3a uses for R2 —
+  still its own change, and not to be mistaken for this one.
 
 ## 7. Interaction with bulk ZIP download
 

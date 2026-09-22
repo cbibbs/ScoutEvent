@@ -119,6 +119,29 @@ links to it, until an organizer deletes it. Acceptable for MVP; a future
 hardening pass could move to a private bucket + short-lived signed URLs
 issued by an edge function.
 
+> **Amended (Feature 006 design §6, and `CONSTITUTION.md` decision 1).**
+> The tradeoff in the paragraph above — "acceptable for MVP" — has been
+> re-decided against for production and is **no longer an accepted
+> tradeoff**. Constitution principle 2 (these photographs are the most
+> sensitive thing the system holds) was written after this paragraph and
+> supersedes the weighing behind it. The decision: the bucket becomes
+> private, and reads are signed under an RLS policy on `storage.objects`
+> mirroring the `photos` policy — so an anonymous caller can sign only
+> an `approved` and `in_slideshow` object (as amended by Feature 002
+> design §3), and the owning organizer can sign any of their own. That
+> ends three things this paragraph accepted: a rejected photo's file
+> staying fetchable, a URL that is permanent, and a leak that cannot be
+> revoked.
+>
+> Also re-decided: the "edge function" sketched above is **not** how it
+> gets built, and neither is Cloudflare R2. Supabase's own signing under
+> RLS needs no new endpoint and no second vendor on the path between the
+> projector and its next frame. Feature 006 §1a argues why.
+>
+> **Not yet built.** Everything in the original paragraph still
+> describes the live system. The amendment records that it is a known
+> exposure, not a choice.
+
 ## 4. Application structure (Next.js App Router)
 
 ```
@@ -175,10 +198,27 @@ Supabase client:
 4. Falls back to re-fetching the photo list every 30s if the realtime
    subscription drops, so a screen left running overnight self-heals.
 
+> **Note for the private-bucket change (Feature 006 §6).** Step 1's
+> photo list becomes a list of objects that must be *signed* before they
+> can be shown, and this screen is the hard case: it runs unattended for
+> hours, so a signature expiring at 21:40 in an empty hall must not
+> black it out. The 30s poll in step 4 is the natural place to re-mint,
+> since it already exists and already self-heals — but that makes the
+> screen depend on it for pixels and not just freshness, which it does
+> not today. Whatever expiry is chosen has to be longer than the poll's
+> worst-case failure window, and a URL long-lived enough to skip
+> re-minting entirely is a public URL with extra steps. Design it in
+> that feature; it is listed here so it is not discovered there.
+
 ## 7. Non-goals / deferred (tracked, not built in this feature)
 
 - Bulk ZIP export of an event's photos.
-- Private storage + signed URLs.
+- Private storage + signed URLs. **Amended:** no longer a deferred
+  non-goal to weigh later — decided in Feature 006 design §6 (private
+  Supabase bucket, RLS-gated signed URLs) and tracked as
+  `CONSTITUTION.md` decision 1. Originals took a different route (R2,
+  Feature 006 §1a) and that half is specced. The display-copy half is
+  decided and unbuilt.
 - Scheduled keep-alive ping for the Supabase free project.
 - Automated content moderation.
 

@@ -45,6 +45,16 @@ in the slideshow, without ever deleting anything I might want later.
 - IF a photo has been removed from the slideshow, THE SYSTEM SHALL keep
   its file in storage and its row in the library, unaffected — only an
   explicit delete (existing US-4/US-6 behavior) removes it.
+  - **Clarified by Feature 006 design §6.** "Unaffected" means nothing
+    is destroyed and the action is reversible; it does **not** promise
+    the file stays reachable to the public. Once display copies move to
+    a private bucket signed under this feature's own RLS predicate
+    (`approved` and `in_slideshow`), pulling a photo from the slideshow
+    will also stop anyone outside the organizer fetching its file — the
+    reversible removal this story describes, applied to the bytes as
+    well as the row. Today it does not: the file remains publicly
+    fetchable by URL, which is the exposure `CONSTITUTION.md` decision 1
+    has been decided against.
 - THE SLIDESHOW (public, US-5) SHALL only ever display photos that are
   both approved and currently marked as in the slideshow; removing a
   photo from the slideshow SHALL take effect there without a page

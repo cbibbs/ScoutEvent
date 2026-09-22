@@ -81,6 +81,13 @@ event.
   but SHALL keep accepting display copies, so the event carries on
   working and only the archive stops growing. Guests SHALL NOT see an
   error for something the organizer controls.
+- WHEN a screen shows a photo it has already shown, THE SYSTEM SHALL
+  reuse the copy the browser already holds rather than fetching it
+  again. A slideshow left running all day must not spend the month's
+  data allowance re-downloading photos that cannot have changed
+  (design.md §1b). This is the same allowance US-19's "never use an
+  original where a display copy would do" protects, spent a different
+  way.
 - This satisfies `CONSTITUTION.md`'s requirement to degrade gracefully
   or warn clearly rather than silently fail or incur charges.
 
@@ -93,10 +100,16 @@ event.
   scheduled together.
 - **Recovering quality for photos already uploaded.** Impossible — the
   original never left the phone.
-- **Making display copies private.** Originals are private by
-  construction under this design (design.md §6 — they live in R2 and are
-  only ever reachable through short-lived signed URLs). The 1600px
-  display copies stay public-read on Supabase, which is the existing
-  Feature 001 tradeoff narrowed to its smaller case. Worth revisiting,
-  but on its own merits rather than as a side effect of this feature.
+- **Making display copies private — scheduled, not deferred.**
+  Originals are private by construction under this design (design.md §6
+  — they live in R2 and are only ever reachable through short-lived
+  signed URLs). Display copies are a separate question, and design.md §6
+  now **decides** it: they stop being public-read, via a private
+  Supabase bucket read through RLS-gated signed URLs. That is not built
+  here, because it touches the read path of every screen and would put
+  this feature's Fast/Sharp work behind it; it is its own feature, and
+  `CONSTITUTION.md`'s open decision 1 records the direction and what it
+  waits on. What changed from the earlier wording is that this is no
+  longer "worth revisiting" — the tradeoff Feature 001 accepted has been
+  re-decided and this feature must not be read as re-endorsing it.
 - Per-guest or per-photo quality choices. One setting per event.
