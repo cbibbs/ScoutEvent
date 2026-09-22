@@ -130,14 +130,17 @@ not it.
 weaker than an earlier draft of this section claimed.** That draft put
 an all-day slideshow at ~3.4GB, above the whole monthly allowance, on
 the assumption that display objects carry a one-hour cache header and
-are therefore re-downloaded hourly. **That was assumed, not measured,
-and the measurement says otherwise** (§1b): the objects are served
-`cache-control: no-cache` with an `ETag`, and `no-cache` means
-"revalidate before reuse", not "do not store". A warm client
+are therefore re-downloaded hourly. **The premise was half right and the
+conclusion was wrong** (§1b): the stored per-object metadata really does
+say `max-age=3600`, on all fifteen objects in the bucket — but what is
+*served* is `cache-control: no-cache` with an `ETag`, and `no-cache`
+means "revalidate before reuse", not "do not store". A warm client
 revalidates and gets a **304 with a zero-byte body**, so an 8-hour
 projector day transfers each photo roughly *once* — tens of megabytes,
 not gigabytes — plus header-sized revalidation traffic. The grids behave
-the same way for anything already seen.
+the same way for anything already seen. (Why the served header
+contradicts the stored one is an open question, and §1b treats it as
+one; it bears on the remedy, not on this conclusion.)
 
 So display-copy egress was never the pressure the originals' bulk
 download is, and the gap between the two is wider than the earlier draft
@@ -246,17 +249,37 @@ convenience.
 
 ## 1b. What the display read path actually does, measured
 
-An earlier draft of §1a asserted that display objects carry supabase-js's
-one-hour default cache header and are therefore re-downloaded hourly by
-a running slideshow. **That was an assumption from reading
-`UploadForm`'s upload call, and it was wrong.** Measured against the
-live project, on three separate in-slideshow objects:
+Three facts hold at once here, and they do not agree with each other.
+Two of them were established by measuring against the live project; the
+third is the gap between them, and it is the one that matters for the
+remedy. None of this was known when §1a was first written, which
+asserted a read path from reading `UploadForm`'s upload call instead of
+observing one.
+
+**Fact 1 — the stored metadata asks for an hour.** Read across *every*
+object in the bucket, not a sample:
 
 ```
+cacheControl      objects   earliest     latest
+max-age=3600         15     2026-09-14   2026-09-16
+```
+
+All fifteen, including one orphan uploaded through the same client path
+but never attached to a `photos` row. So supabase-js's one-hour default
+is real and is recorded per object, exactly as the original reading of
+`UploadForm` supposed.
+
+**Fact 2 — the read path serves `no-cache`.** A full header dump of a
+display copy:
+
+```
+content-type: image/jpeg
+content-length: 463360
+cf-cache-status: REVALIDATED
 cache-control: no-cache
 etag: "7f41fe928772b56126480e92eb995727"
-cf-cache-status: MISS / REVALIDATED
-content-length: 463360
+last-modified: Wed, 16 Sep 2026 18:21:09 GMT
+x-robots-tag: none
 ```
 
 and, on a conditional request:
@@ -266,58 +289,101 @@ If-None-Match: "7f41…"   ->  304, 0 bytes of body
 unconditional            ->  200, 463360 bytes
 ```
 
-Two consequences, pulling in opposite directions. Both matter, and they
-are not the same problem.
+Exactly one `cache-control` header, and it is not the stored one. This
+was checked against the possibility of a measurement artifact rather
+than assumed: known-immutable third-party assets fetched over the same
+path arrive with their long `max-age`/`immutable` headers intact, so
+nothing in the measuring environment is rewriting `cache-control`.
 
-**Egress is already close to the floor.** `no-cache` does not mean "do
-not store"; it means "revalidate before reuse". With an `ETag` present,
-a warm client revalidates and is answered `304` with an empty body. A
-slideshow therefore transfers each photo about **once** over a session,
-not once per pass and not once an hour — an 8-hour projector day on ~100
-photos is tens of megabytes plus header-sized revalidation traffic, not
-the ~3.4GB the earlier draft claimed. There is no large egress saving
-available here, because the 304 behaviour is already delivering it. Any
-spec text promising one is wrong and has been removed.
+**Fact 3 — something overrides the stored value, and we do not know
+what.** A per-object `max-age=3600` is being served as `no-cache`. The
+cause is **not established**, and no spec text should assume one. This
+is recorded as an open question rather than smoothed over, because the
+obvious remedy depends entirely on the answer (see below).
 
-**Latency and reliability are not.** `no-cache` with
-`cf-cache-status: MISS`/`REVALIDATED` means **every slide advance makes
-a network round trip to origin**, even when the client already holds the
-bytes and the answer will be "unchanged, download nothing". That round
-trip is free in bandwidth and expensive in the one currency the
-slideshow cannot spare: on a congested venue network — the network
-Feature 001 compressed to 1600px/0.6MB specifically to survive — an
-in-flight revalidation is a projector that stalls between slides, or
+### What this means for egress: already close to the floor
+
+`no-cache` does not mean "do not store"; it means "revalidate before
+reuse". With an `ETag` present, a warm client revalidates and is
+answered `304` with an empty body. A slideshow therefore transfers each
+photo about **once** over a session — not once per pass, and not once an
+hour — so an 8-hour projector day on ~100 photos is tens of megabytes
+plus header-sized revalidation traffic, not the ~3.4GB an earlier draft
+of §1a claimed. There is no large egress saving available here, because
+the 304 behaviour is already delivering it. Any spec text promising one
+is wrong and has been removed.
+
+Note the shape of that earlier error, because it is the reusable lesson:
+the premise about the *stored* header was correct and the conclusion
+about *served behaviour* was still wrong. Reading the upload call tells
+you what was requested, not what a client receives.
+
+### What this means for reliability: the real cost, and it is unfixed
+
+`no-cache` with `cf-cache-status: REVALIDATED` means **every slide
+advance makes a network round trip to origin**, even when the client
+already holds the bytes and the answer will be "unchanged, download
+nothing". That round trip is free in bandwidth and expensive in the one
+currency the slideshow cannot spare: on a congested venue network — the
+network Feature 001 compressed to 1600px/0.6MB specifically to survive —
+an in-flight revalidation is a projector that stalls between slides, or
 shows nothing, in a room full of people. Against constitution principle
 3, that is a worse failure than an allowance overage, which arrives
 later as a number rather than immediately as a dead screen.
 
-### What to do about it (T2.3)
+That cost is real regardless of fact 3. What fact 3 changes is how hard
+it is to remove.
 
-Set `cacheControl` to `max-age=31536000, immutable` on the display-copy
-upload. The objects are content-addressed by UUID and are never
-rewritten, so there is nothing to invalidate; deleting a photo removes
-the row and the object together. A one-argument change to `UploadForm`,
-applying to all three quality modes, not just Archive.
+### What to do about it (T2.3, then T2.4)
 
-**Its justification is reliability, not bytes.** `immutable` tells the
+The remedy everyone reaches for first is "pass
+`cacheControl: 31536000, immutable` at upload". **That may well do
+nothing**, and the spec must not pretend otherwise: a stored
+`max-age=3600` is already being overridden down to `no-cache`, so there
+is no reason to believe a stored `31536000` would survive the same path.
+Shipping it blind risks a change that verifies green against the stored
+metadata and alters nothing a browser sees — which is precisely why the
+verification step is written against the **served** header rather than
+the argument passed. That distinction is load-bearing, not pedantic.
+
+So the work splits in two, and the order is the point:
+
+1. **T2.3 — establish why the served header does not match the stored
+   metadata.** Candidates worth checking, none confirmed: a project- or
+   bucket-level storage setting; the public-object endpoint overriding
+   per-object metadata (which, if true, may behave differently once the
+   bucket is private and reads are signed — see §6); or a rule at the
+   CDN layer, which `cf-cache-status: REVALIDATED` shows is in the path
+   and honouring revalidation. Answer recorded here, in this section.
+2. **T2.4 — apply whatever remedy that answer implies**, and verify it
+   by the header actually served to a browser. If the cause is
+   per-object, this is the one-argument change to `UploadForm` originally
+   imagined, applying to all three quality modes. **If the cause is
+   server-side — a bucket setting, an endpoint behaviour, or a CDN rule
+   — then it is not a `UploadForm` change at all**, and the shape,
+   effort and reviewability of the task are different. Say which it
+   turned out to be.
+
+**The justification is reliability, not bytes, and it survives either
+answer.** `immutable` (or whatever produces the same effect) tells the
 client it may reuse what it holds *without asking*, which removes the
-per-slide origin round trip entirely. The byte saving is small, because
-the 304s already had it. Keep the task's priority — an unattended
-projector that does not touch the network between slides is a better
-answer to principle 3 than any egress arithmetic — but do not let it be
-sold internally as a storage-bill fix, because that claim will not
-survive the next person who measures it.
+per-slide origin round trip. The byte saving is small, because the 304s
+already had it. Keep the priority — an unattended projector that does
+not touch the network between slides is a better answer to principle 3
+than any egress arithmetic — but do not let this be sold internally as a
+storage-bill fix, because that claim will not survive the next person
+who measures it.
 
 Two caveats the implementer owns:
 
-- **Existing objects are unaffected.** Every photo already uploaded
-  keeps `no-cache` — not a one-hour header, as an earlier draft of this
-  section said — until it is re-uploaded, which the app never does. So
-  the round trips persist for the existing library and stop only for
-  photos uploaded after this ships. Nothing is broken by that; it simply
-  means an event running on old photos sees no improvement. A backfill
-  (re-setting metadata on existing objects) is possible and is not in
-  scope here.
+- **Existing objects.** All fifteen present today carry stored
+  `max-age=3600` and are served `no-cache`. If the cause is per-object
+  metadata, they keep that until re-uploaded, which the app never does,
+  so the round trips persist for the existing library and stop only for
+  photos uploaded afterwards — a backfill re-setting metadata is
+  possible and is not in scope here. If the cause is server-side, the
+  fix likely applies to old and new objects alike and no backfill is
+  needed. Another thing T2.3's answer decides.
 - **Signed URLs can undo it.** See §6: a signature that differs per
   request produces a URL the client has never seen, which defeats
   `immutable` completely and turns every slide into a full 200. This is
@@ -586,9 +652,10 @@ owns these:
   request produces a URL it has never seen: no `ETag` to revalidate
   against, no `immutable` entry to reuse, and therefore a **full 200
   download per slide** — worse than today's `no-cache` + 304 behaviour
-  (§1b), and it would undo T2.3 entirely. Mint URLs with an expiry
-  rounded to a fixed boundary, so every client in a window gets a
-  byte-identical URL, and re-sign on a schedule rather than per render.
+  (§1b), and it would undo whatever remedy T2.4 lands on. Mint URLs with
+  an expiry rounded to a fixed boundary, so every client in a window
+  gets a byte-identical URL, and re-sign on a schedule rather than per
+  render.
   Getting this wrong is the one way this privacy change could make the
   projector *less* reliable than leaving it public-read — a bad trade
   however good the privacy is.

@@ -74,20 +74,42 @@ Only blocks Phase 3. Phases 1-2 can proceed in parallel.
       or 2560px accordingly; record `display_bytes` (design §1, §2).
 - [ ] T2.2 Confirm the mode change applies only to new uploads and
       nothing retroactively rewrites existing photos (US-18).
-- [ ] T2.3 Set `cacheControl: "31536000, immutable"` on the display-copy
-      upload in `UploadForm` (design §1b, US-20). **This is a
-      reliability fix, not an egress one.** Production currently serves
-      these objects `cache-control: no-cache` with an `ETag`, so a warm
-      client already gets a zero-byte `304` and there is little
-      bandwidth to save — but `no-cache` forces a network round trip to
-      origin on *every slide advance*, and on a congested venue network
-      that is a projector stalling between slides. `immutable` lets the
-      client reuse what it holds without asking. Applies to all three
-      modes, not just Archive. Verify by reading the `cache-control`
-      response header actually served on a newly uploaded photo, not by
-      confirming the argument was passed. Existing objects keep
-      `no-cache` until re-uploaded, so the improvement starts with new
-      photos; that is accepted.
+- [ ] T2.3 **Establish why the served `cache-control` does not match the
+      stored one, before assuming any remedy** (design §1b, US-20).
+      Measured today: every object in the bucket stores
+      `cacheControl: max-age=3600`, and every object is served
+      `cache-control: no-cache`. Something between the two overrides it
+      and we do not know what. Candidates to check, none confirmed: a
+      project- or bucket-level storage setting; the public-object
+      endpoint overriding per-object metadata (which may behave
+      differently once the bucket is private and reads are signed,
+      design §6); or a rule at the CDN layer — `cf-cache-status:
+      REVALIDATED` shows Cloudflare is in the path and honouring
+      revalidation. Done when the cause is identified and written into
+      design §1b, not when a plausible theory is named. This task is
+      cheap and it is the reason T2.4 is not guesswork.
+- [ ] T2.4 Apply the remedy T2.3's answer implies, and verify it by the
+      `cache-control` header **actually served to a browser** for a
+      freshly uploaded photo — not by confirming an argument was passed,
+      which is exactly the check that would pass today while changing
+      nothing (design §1b, US-20).
+      - If the cause is per-object: set `cacheControl:
+        "31536000, immutable"` on the display-copy upload in
+        `UploadForm`, for all three quality modes. Existing objects keep
+        their current behaviour until re-uploaded, which the app never
+        does; a metadata backfill is possible and out of scope.
+      - **If the cause is server-side** (bucket setting, endpoint
+        behaviour, CDN rule) **this is not a `UploadForm` change at
+        all** — it is a configuration change with a different shape,
+        different review, and probably a README/setup step beside the
+        existing Supabase ones. Record which it turned out to be.
+      **Priority is unchanged, and the justification is reliability, not
+      bytes.** Bandwidth is already near the floor because `no-cache`
+      plus an `ETag` yields zero-byte `304`s; what the current header
+      costs is a network round trip to origin on *every slide advance*,
+      which on a congested venue network is a projector stalling between
+      slides. That cost is real whatever the cause turns out to be — the
+      finding makes the fix harder to get right, not less necessary.
 
 ## Phase 3 — Originals (US-19)
 
@@ -142,9 +164,11 @@ Only blocks Phase 3. Phases 1-2 can proceed in parallel.
       slide, (b) how many bytes each transfers, and (c) whether any
       slide visibly stalls or blanks while a request is in flight. The
       pass condition is **(a) going to zero for already-seen photos
-      after T2.3**, not a byte count — bytes were already near the floor
+      after T2.4**, not a byte count — bytes were already near the floor
       because of `304`s. Write the numbers into this file rather than
-      ticking the box bare.
+      ticking the box bare. Run it against a photo uploaded *after*
+      T2.4, since if the remedy turns out to be per-object it will not
+      affect the existing library.
 - [ ] T5.6 Redeploy to production.
 
 ## Depends on / pairs with
