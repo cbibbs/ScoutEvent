@@ -9,8 +9,10 @@ bytes live with the rule that decides who may read them, unless egress
 makes that impossible. Originals are the only case where it does: a bulk
 download is ~1.2GB against a 2GB monthly allowance and no cache can
 help. Display copies stay because their access rule is live RLS that R2
-cannot see, their egress is cacheable (T2.3), and the projector must not
-gain a second vendor it can die on.
+cannot see, and because the projector must not gain a second vendor it
+can die on. Their egress, once measured, was never the pressure it
+looked like (design §1b) — which is why the decision does not rest on
+it.
 
 **Also decided (design §6):** display copies stop being public-read —
 private Supabase bucket, reads through RLS-gated signed URLs. **Not
@@ -46,15 +48,13 @@ Only blocks Phase 3. Phases 1-2 can proceed in parallel.
 - [ ] T0.3 Add the credentials to Vercel environment variables and
       `.env.example`, and document the setup in the README beside the
       existing Supabase steps.
-- [ ] T0.4 Confirm the two Supabase numbers design §1b's reasoning is
-      sized against: the **current** free egress allowance (the specs
-      have carried 2GB since Feature 001 and the published figure has
-      moved), and whether CDN-cached bytes are billed as egress. Record
-      both in `specs/PROJECT.md`'s free-tier table. Not a gate on
-      anything — but if cached bytes are billed at full price, say so in
-      design §1b, because the display-copy half of §1a is sized against
-      the assumption that they are not. This does not block Phase 3; it
-      blocks trusting T2.3's saving.
+- [ ] T0.4 Confirm the Supabase egress accounting, for headroom rather
+      than for the §1a decision, which no longer rests on it (design
+      §1b): the **current** free allowance (the specs have carried 2GB
+      since Feature 001 and the published figure has moved), whether a
+      `304` revalidation is billed as a request, and whether CDN-cached
+      bytes count as egress. Record the answers in `specs/PROJECT.md`'s
+      free-tier table. Gates nothing.
 
 ## Phase 1 — Schema & settings (US-18)
 
@@ -74,15 +74,20 @@ Only blocks Phase 3. Phases 1-2 can proceed in parallel.
       or 2560px accordingly; record `display_bytes` (design §1, §2).
 - [ ] T2.2 Confirm the mode change applies only to new uploads and
       nothing retroactively rewrites existing photos (US-18).
-- [ ] T2.3 Set a one-year immutable `cacheControl` on the display-copy
-      upload in `UploadForm` (design §1b, US-20). Today the call passes
-      only `contentType`, so supabase-js's one-hour default applies and
-      an all-day slideshow re-downloads every photo hourly for objects
-      that can never change. Applies to all three modes, not just
-      Archive. Verify by reading the `cache-control` response header on
-      a newly uploaded photo in the browser's network panel — the point
-      is the header that is actually served, not the argument that was
-      passed. Existing objects keep their old header; that is accepted.
+- [ ] T2.3 Set `cacheControl: "31536000, immutable"` on the display-copy
+      upload in `UploadForm` (design §1b, US-20). **This is a
+      reliability fix, not an egress one.** Production currently serves
+      these objects `cache-control: no-cache` with an `ETag`, so a warm
+      client already gets a zero-byte `304` and there is little
+      bandwidth to save — but `no-cache` forces a network round trip to
+      origin on *every slide advance*, and on a congested venue network
+      that is a projector stalling between slides. `immutable` lets the
+      client reuse what it holds without asking. Applies to all three
+      modes, not just Archive. Verify by reading the `cache-control`
+      response header actually served on a newly uploaded photo, not by
+      confirming the argument was passed. Existing objects keep
+      `no-cache` until re-uploaded, so the improvement starts with new
+      photos; that is accepted.
 
 ## Phase 3 — Originals (US-19)
 
@@ -129,12 +134,17 @@ Only blocks Phase 3. Phases 1-2 can proceed in parallel.
 - [ ] T5.4 Confirm the 4K claim rather than trusting the arithmetic:
       view a Sharp photo and a Fast photo on a 4K display and check the
       difference is real and worth the storage.
-- [ ] T5.5 Confirm the egress claim the same way: leave a slideshow
-      running over several full passes and check in the network panel
-      that photos already shown are served from cache rather than
-      re-fetched (US-20, design §1b). This is the measurement §1a's
-      display-copy decision rests on; if it fails, §1a says to re-argue
-      that half rather than assume it.
+- [ ] T5.5 Measure the slideshow's read path rather than assuming it —
+      the last assumption here was wrong in both directions (design
+      §1b). With a slideshow running over several full passes, on a
+      **throttled** connection (devtools "Slow 3G" or similar), record
+      for photos already shown: (a) how many requests reach origin per
+      slide, (b) how many bytes each transfers, and (c) whether any
+      slide visibly stalls or blanks while a request is in flight. The
+      pass condition is **(a) going to zero for already-seen photos
+      after T2.3**, not a byte count — bytes were already near the floor
+      because of `304`s. Write the numbers into this file rather than
+      ticking the box bare.
 - [ ] T5.6 Redeploy to production.
 
 ## Depends on / pairs with

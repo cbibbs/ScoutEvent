@@ -14,10 +14,11 @@ model (design §2-3 there).
 
 The two copies live in **different stores**, and §1a is where that
 split is argued rather than assumed: display copies stay in Supabase
-Storage because the rule deciding who may read them lives there and
-their egress is cacheable; originals go to Cloudflare R2 because a bulk
-download of them is the one transfer no cache can make affordable. R2's
-free tier is 10GB and, critically, charges nothing for egress.
+Storage because the rule deciding who may read them is live,
+status-dependent SQL that only Supabase can evaluate; originals go to
+Cloudflare R2 because their access rule is static and their bulk
+download is the one transfer nothing can make affordable. R2's free tier
+is 10GB and, critically, charges nothing for egress.
 
 Why those pixel numbers, since the organizer-facing wording hides them:
 
@@ -173,8 +174,9 @@ deserves its arithmetic:
 That last point applies to *any* signing scheme, including the Supabase
 one §6 now commits to — it is a problem the follow-on feature must
 solve, not a reason to prefer one store. What it does rule out is taking
-it on **for bytes whose egress a cache header fixes, while also putting a
-second vendor on the projector's critical path.**
+it on **for bytes that do not need to move, while also putting a second
+vendor on the projector's critical path** — a path that §1b shows is
+already sensitive to one network round trip per slide.
 
 ### Decision
 
@@ -183,9 +185,11 @@ second vendor on the projector's critical path.**
   `tasks.md` T0.1). Unchanged from the previous
   version of this section, but now decided by a stated rule rather than
   by the egress number alone.
-- **Display copies → stay in Supabase Storage**, because their
-  authorization rule lives there, their egress is cacheable, and the
-  projector should not gain a second vendor it can die on.
+- **Display copies → stay in Supabase Storage**, because the rule
+  deciding who may read them can only be evaluated there, because the
+  projector should not gain a second vendor it can die on, and because
+  the egress that looked like a reason to move them turned out, on
+  measurement, not to be one (§1b).
 - **Display copies stop being public-read** — private bucket, reads
   through signed URLs minted under the existing RLS predicate. This is
   the same "private bucket + signed URLs" mitigation deferred since
@@ -240,39 +244,99 @@ convenience.
   display-copy half of this section does not depend on that answer and
   stands either way.
 
-## 1b. Making display-copy egress cheap, since the decision leans on it
+## 1b. What the display read path actually does, measured
 
-§1a keeps display copies on a metered store on the strength of two
-mitigations. An argument that rests on unbuilt work has to schedule it,
-so:
+An earlier draft of §1a asserted that display objects carry supabase-js's
+one-hour default cache header and are therefore re-downloaded hourly by
+a running slideshow. **That was an assumption from reading
+`UploadForm`'s upload call, and it was wrong.** Measured against the
+live project, on three separate in-slideshow objects:
 
-- **Immutable cache headers (in scope here, T2.3).** Upload display
-  copies with `cacheControl` set to a year (`31536000`, `immutable`)
-  instead of supabase-js's one-hour default. The objects are
-  content-addressed by UUID and are never rewritten, so there is nothing
-  to invalidate; delete removes the row and the object together. This is
-  a one-argument change to `UploadForm` and it is the single largest
-  egress reduction available to this project. It applies to Fast and
-  Sharp uploads too, so it is not Archive-specific.
+```
+cache-control: no-cache
+etag: "7f41fe928772b56126480e92eb995727"
+cf-cache-status: MISS / REVALIDATED
+content-length: 463360
+```
 
-  It only affects objects uploaded *after* it ships. Existing objects
-  keep their one-hour header until re-uploaded, which is acceptable —
-  nothing is broken, the saving simply starts with new photos.
-- **Thumbnails (not in scope, Feature 004 §5 option 1).** Grid cells
-  fetching 0.6MB to draw a square is the other standing waste. §1a's
-  decision does not require thumbnails, but the case for them is now
-  stronger than Feature 004 left it: they cut grid egress by roughly an
-  order of magnitude, and once display reads are signed (§6) they also
-  cut the number of signatures a page needs. Feature 004's advice —
-  measure against a real event first — still holds.
+and, on a conditional request:
 
-Two numbers to confirm rather than trust, since both mitigations are
-sized against them (T0.4): the **current** Supabase free egress
-allowance (this project's specs have carried 2GB since Feature 001; the
-figure has moved), and whether CDN-cached bytes count against it. If
-cached bytes are counted at full price, the cache-header mitigation is
-weaker than assumed and §1a's display-copy conclusion should be re-argued
-— not reversed by default, since reasons 2 and 3 stand on their own.
+```
+If-None-Match: "7f41…"   ->  304, 0 bytes of body
+unconditional            ->  200, 463360 bytes
+```
+
+Two consequences, pulling in opposite directions. Both matter, and they
+are not the same problem.
+
+**Egress is already close to the floor.** `no-cache` does not mean "do
+not store"; it means "revalidate before reuse". With an `ETag` present,
+a warm client revalidates and is answered `304` with an empty body. A
+slideshow therefore transfers each photo about **once** over a session,
+not once per pass and not once an hour — an 8-hour projector day on ~100
+photos is tens of megabytes plus header-sized revalidation traffic, not
+the ~3.4GB the earlier draft claimed. There is no large egress saving
+available here, because the 304 behaviour is already delivering it. Any
+spec text promising one is wrong and has been removed.
+
+**Latency and reliability are not.** `no-cache` with
+`cf-cache-status: MISS`/`REVALIDATED` means **every slide advance makes
+a network round trip to origin**, even when the client already holds the
+bytes and the answer will be "unchanged, download nothing". That round
+trip is free in bandwidth and expensive in the one currency the
+slideshow cannot spare: on a congested venue network — the network
+Feature 001 compressed to 1600px/0.6MB specifically to survive — an
+in-flight revalidation is a projector that stalls between slides, or
+shows nothing, in a room full of people. Against constitution principle
+3, that is a worse failure than an allowance overage, which arrives
+later as a number rather than immediately as a dead screen.
+
+### What to do about it (T2.3)
+
+Set `cacheControl` to `max-age=31536000, immutable` on the display-copy
+upload. The objects are content-addressed by UUID and are never
+rewritten, so there is nothing to invalidate; deleting a photo removes
+the row and the object together. A one-argument change to `UploadForm`,
+applying to all three quality modes, not just Archive.
+
+**Its justification is reliability, not bytes.** `immutable` tells the
+client it may reuse what it holds *without asking*, which removes the
+per-slide origin round trip entirely. The byte saving is small, because
+the 304s already had it. Keep the task's priority — an unattended
+projector that does not touch the network between slides is a better
+answer to principle 3 than any egress arithmetic — but do not let it be
+sold internally as a storage-bill fix, because that claim will not
+survive the next person who measures it.
+
+Two caveats the implementer owns:
+
+- **Existing objects are unaffected.** Every photo already uploaded
+  keeps `no-cache` — not a one-hour header, as an earlier draft of this
+  section said — until it is re-uploaded, which the app never does. So
+  the round trips persist for the existing library and stop only for
+  photos uploaded after this ships. Nothing is broken by that; it simply
+  means an event running on old photos sees no improvement. A backfill
+  (re-setting metadata on existing objects) is possible and is not in
+  scope here.
+- **Signed URLs can undo it.** See §6: a signature that differs per
+  request produces a URL the client has never seen, which defeats
+  `immutable` completely and turns every slide into a full 200. This is
+  the one way the privacy change could make the projector worse, and §6
+  says how to avoid it.
+
+**Thumbnails (not in scope, Feature 004 §5 option 1).** Grid cells
+fetching 0.6MB to draw a square remains real waste — now understood as
+mostly *first-view* waste and per-cell round trips rather than repeated
+transfer. §1a's decision does not depend on thumbnails. Feature 004's
+advice — measure against a real event first — still holds, and this
+section is the argument for taking that advice literally.
+
+**Still worth confirming (T0.4)**, though no longer load-bearing for
+§1a's conclusion: the **current** Supabase free egress allowance (these
+specs have carried 2GB since Feature 001 and the published figure has
+moved), and how revalidation is accounted — whether a `304` is billed as
+a request, and whether CDN-cached bytes count as egress. These size the
+headroom; they no longer decide where display copies live.
 
 ## 2. Data model
 
@@ -517,13 +581,17 @@ owns these:
   the code cannot go first and degrade gracefully (PROJECT.md,
   "Migrations and deploy order") — the safe order is code that signs but
   tolerates a still-public bucket, deployed first, then the flip.
-- **Signed URLs must not destroy the caching §1a leans on.** A browser
-  caches by full URL including query string, so a signature that differs
-  per request re-downloads every byte and quietly undoes T2.3. Mint
-  URLs with an expiry rounded to a fixed boundary (so every client in a
-  window gets a byte-identical URL) and re-sign on a schedule, not per
-  render. Getting this wrong converts a privacy improvement into an
-  egress regression, which is exactly the trade §1a refused.
+- **Signed URLs must not destroy client caching.** A browser caches by
+  full URL including query string, so a signature that differs per
+  request produces a URL it has never seen: no `ETag` to revalidate
+  against, no `immutable` entry to reuse, and therefore a **full 200
+  download per slide** — worse than today's `no-cache` + 304 behaviour
+  (§1b), and it would undo T2.3 entirely. Mint URLs with an expiry
+  rounded to a fixed boundary, so every client in a window gets a
+  byte-identical URL, and re-sign on a schedule rather than per render.
+  Getting this wrong is the one way this privacy change could make the
+  projector *less* reliable than leaving it public-read — a bad trade
+  however good the privacy is.
 
 Two things that must not be lost in the handoff:
 

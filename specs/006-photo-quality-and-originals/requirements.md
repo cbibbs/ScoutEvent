@@ -82,12 +82,16 @@ event.
   working and only the archive stops growing. Guests SHALL NOT see an
   error for something the organizer controls.
 - WHEN a screen shows a photo it has already shown, THE SYSTEM SHALL
-  reuse the copy the browser already holds rather than fetching it
-  again. A slideshow left running all day must not spend the month's
-  data allowance re-downloading photos that cannot have changed
-  (design.md §1b). This is the same allowance US-19's "never use an
-  original where a display copy would do" protects, spent a different
-  way.
+  display it **without contacting the network at all**. Today it does
+  re-download nothing — the server answers "unchanged" and sends no
+  image data — but it is still asked, once per slide, and on a
+  congested venue network that question is what stalls a projector
+  between slides (design.md §1b). The requirement is the absent round
+  trip, not the absent bytes; an acceptance test that only counts bytes
+  passes today and proves nothing.
+- This is the same concern US-19's "never use an original where a
+  display copy would do" protects — a screen that must keep working on
+  the worst network in the building — reached from the other side.
 - This satisfies `CONSTITUTION.md`'s requirement to degrade gracefully
   or warn clearly rather than silently fail or incur charges.
 

@@ -42,8 +42,11 @@ are read under a live, per-photo, status-dependent RLS predicate, so
 they stay where that predicate is; an original's rule is static
 ("the owning organizer, on an explicit download"), cheap to restate in
 one route handler, and its egress — ~1.2GB for one bulk download — is
-the single case no cache header can rescue. Apply the same test before
-moving any other bytes; the answer is not "R2 is free" by default.
+the single case no caching behaviour can rescue — display copies, by
+contrast, are already revalidated into near-zero repeat transfer
+(Feature 006 §1b). Apply the same test before moving any other bytes,
+and measure the traffic before citing it; the answer is not "R2 is free"
+by default.
 
 ## Where the data lives
 
@@ -92,7 +95,7 @@ across every feature and should keep holding:
 |---|---|---|
 | Supabase database | 500MB | Metadata only; storage binds long before this |
 | Supabase storage | 1GB | ~1,500 display copies. The real capacity constraint |
-| Supabase egress | 2GB/mo (**confirm** — Feature 006 T0.4; this figure has been carried since Feature 001 and the published one has moved) | Slideshow re-downloads drive this, and they are avoidable: display objects are immutable but are uploaded without a `cacheControl`, so supabase-js's one-hour default applies and an all-day slideshow re-fetches everything hourly (Feature 006 §1b, T2.3). A bulk download of full-resolution photos is the case no cache fixes — which is why originals went to R2 |
+| Supabase egress | 2GB/mo (**confirm** — Feature 006 T0.4; this figure has been carried since Feature 001 and the published one has moved) | Less pressing than these specs long assumed. Display objects are served `cache-control: no-cache` with an `ETag` (**measured**, Feature 006 §1b), so a warm slideshow revalidates and gets zero-byte `304`s rather than re-downloading — an all-day projector costs tens of MB, not GB. The cost of `no-cache` is a per-slide origin round trip, which is a latency/reliability problem, not an egress one (Feature 006 T2.3). A bulk download of full-resolution originals is the one case nothing rescues — which is why originals went to R2 |
 | Supabase auth email | a few per hour | Fails *silently*: the app says "link sent" and nothing arrives. Organizers only |
 | Supabase project pause | after 7 idle days | Wake it before an event |
 | R2 storage | 10GB | ~2,500 originals. **Unverified and gating**: whether a payment method is required inside the free allowance, and whether the ceiling refuses writes or bills silently (Feature 006 T0.1). If it bills silently, Archive mode is cut rather than moved to Supabase |

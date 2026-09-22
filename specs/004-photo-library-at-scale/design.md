@@ -205,25 +205,29 @@ Recommendation: ship pagination + lazy-loading first (free); revisit
 real thumbnails only if that's still not enough once there's a real
 event to measure against.
 
-**Two later decisions strengthen option 1 without overturning this
-recommendation** (Feature 006 design §1a/§1b/§6):
+**Two later decisions touch this, and the measure-first advice survives
+both** (Feature 006 design §1a/§1b/§6):
 
 - Feature 006 weighed moving display copies to a store with free egress
-  and decided against it, partly on the grounds that this grid's egress
-  is fixable locally — by cache headers and, if that is not enough, by
-  these thumbnails. So option 1 is now the standing answer to "the grids
-  cost too much bandwidth", not one of two candidates.
+  and decided against it — but **not** on grounds that make thumbnails
+  more urgent. It measured what these objects actually serve
+  (`cache-control: no-cache` with an `ETag`) and found that a cell the
+  organizer has already seen is answered with a zero-byte `304`. So the
+  repeat-view cost this section worried about is mostly already gone,
+  and what thumbnails would still buy is **first-view** bytes and fewer
+  per-cell origin round trips on a slow connection. That is a real but
+  smaller prize than "each cell pulls 0.6MB" suggests. Measure before
+  building, exactly as recommended above.
 - Display copies are also decided to become private, read through signed
   URLs. A grid page then needs a signature per visible object. Supabase
-  can sign a batch in one call, so this is one extra round-trip per page
-  rather than one per cell — but thumbnails would halve nothing here and
-  do reduce how many bytes each signature unlocks. Whoever builds the
-  private-bucket feature should sign per page, not per cell, and should
-  not let the signing work quietly reintroduce the unbounded query this
-  feature removed.
-
-The measure-first advice stands; what changed is which option wins if
-the measurement says act.
+  can sign a batch in one call, so that is one extra round trip per page
+  rather than one per cell — but a signature that changes per request
+  produces a URL the browser has never cached, which would turn every
+  cell back into a full download and make the first bullet false.
+  Whoever builds the private-bucket feature should sign per page, not
+  per cell, hold the signature stable across a window (Feature 006 §6),
+  and not let the signing work quietly reintroduce the unbounded query
+  this feature removed.
 
 ## 6. Mobile breakpoint (US-16)
 
