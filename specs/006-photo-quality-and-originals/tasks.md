@@ -7,7 +7,10 @@ where applicable, verified) — per `specs/CONSTITUTION.md`.
 copies stay in Supabase Storage. Both halves follow one rule — image
 bytes live with the rule that decides who may read them, unless egress
 makes that impossible. Originals are the only case where it does: a bulk
-download is ~1.2GB against a 2GB monthly allowance and no cache can
+download is ~1.2GB against a monthly allowance since **verified as
+5GB, not the 2GB carried here** (Feature 008 §0) — and at the 1500-photo
+scale of a real course it is ~6GB, which exceeds the whole allowance on
+its own, so the conclusion is unchanged and strengthened. No cache can
 help. Display copies stay because their access rule is live RLS that R2
 cannot see, and because the projector must not gain a second vendor it
 can die on. Their egress, once measured, was never the pressure it
@@ -55,6 +58,15 @@ Only blocks Phase 3. Phases 1-2 can proceed in parallel.
       `304` revalidation is billed as a request, and whether CDN-cached
       bytes count as egress. Record the answers in `specs/PROJECT.md`'s
       free-tier table. Gates nothing.
+
+      **Partially answered by Feature 008** (§0, 2026-10-04): the free
+      allowance is **5GB/mo**, not 2GB, and a **separate 5GB cached-egress
+      meter** exists that this task did not know to ask about.
+      `specs/PROJECT.md`'s table is updated. The other two halves — is a
+      `304` billed, and which meter do CDN-served bytes land on — remain
+      open and are now decision-relevant rather than merely interesting:
+      Feature 008 T0.4 asks them of the documentation and T2.2 measures
+      them. Do not tick this box until those land.
 
 ## Phase 1 — Schema & settings (US-18)
 

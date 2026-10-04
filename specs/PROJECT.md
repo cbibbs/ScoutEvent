@@ -91,13 +91,25 @@ across every feature and should keep holding:
 
 ## Free-tier limits
 
+Supabase figures **re-checked against the published pricing on
+2026-10-04** (Feature 008 design §0), which closes half of Feature 006
+T0.4. The egress figure these specs had carried since Feature 001 was
+wrong by 2.5×, and a second egress meter nobody had recorded exists.
+Where an older spec reasons against "2GB/mo", the premise is wrong;
+check whether its conclusion depended on it before reusing it (Feature
+006 §1a's did not — see Feature 008 §13).
+
 | Limit | Allowance | What happens at the edge |
 |---|---|---|
-| Supabase database | 500MB | Metadata only; storage binds long before this |
-| Supabase storage | 1GB | ~1,500 display copies. The real capacity constraint |
-| Supabase egress | 2GB/mo (**confirm** — Feature 006 T0.4; this figure has been carried since Feature 001 and the published one has moved) | Less pressing than these specs long assumed. Display objects are served `cache-control: no-cache` with an `ETag` (**measured**, Feature 006 §1b) — despite per-object metadata storing `max-age=3600` on every object. The override has been localized to the storage API origin (not the bucket config, not the public endpoint, not the CDN edge) and may be intended platform behaviour; Feature 006 T2.3 settles it. So a warm slideshow revalidates and gets zero-byte `304`s rather than re-downloading: an all-day projector costs tens of MB, not GB. The cost of `no-cache` is a per-slide origin round trip, which is a latency/reliability problem, not an egress one (Feature 006 T2.3/T2.4). A bulk download of full-resolution originals is the one case nothing rescues — which is why originals went to R2 |
-| Supabase auth email | a few per hour | Fails *silently*: the app says "link sent" and nothing arrives. Organizers only |
+| Supabase database | 500MB | Metadata only; storage binds long before this. 1,500 photo rows is under 1MB — not a constraint at any scale this project has |
+| Supabase storage | 1GB | ~1,500-1,800 display copies at the measured 0.3-0.46MB, **shared across every event ever created**. The real capacity constraint. Rejection does not free it, and deleting an event row does not either — rows cascade, storage objects do not (Feature 008 §3) |
+| Supabase egress | **5GB/mo** (verified 2026-10-04) | Display objects are served `cache-control: no-cache` with an `ETag` (**measured**, Feature 006 §1b), so a warm client revalidates and gets zero-byte `304`s. Per-client cost is therefore **(distinct photos displayed) × (display-copy size)**, not watch-time × rate — an all-day projector costs about one pass. What that model does *not* make cheap is many *different* clients: 65 viewers × 100-300 distinct photos is 2.6-7.8GB, which is why Feature 008 exists. Three further contributors no spec had costed: the slideshow's unbounded 30s poll, moderation loading full-size copies, and bulk retrieval (Feature 008 §2b). The `no-cache` round trip per slide remains a latency problem (Feature 006 T2.3/T2.4) |
+| Supabase cached egress | **5GB/mo, metered separately** (verified 2026-10-04) | Newly recorded. **Which of the two meters a CDN-served display copy lands on is unknown and is the single most decision-relevant unmeasured fact in the project** — a ~60× swing on the largest egress term, because every slideshow client starts at the same photo and requests the same objects. Feature 008 T2.2 measures it |
+| Supabase realtime | 200 concurrent peak connections; 2M messages/mo | Messages have ~6× headroom at this project's scale (Feature 008 §4). Concurrency is unclear: each slideshow client opens **two** channels over one socket, so 80 viewers is either 85/200 or 170/200 depending on what the meter counts (Feature 008 T0.3). On refusal, clients fall back to the 30s poll — which is the most expensive query in the app, so the failure mode is an egress rise, not an outage |
+| **Exceeding any of the above** | **unknown** | Not documented on the pricing page. Bill, throttle, refuse, or stop the project — the difference between an irritation and a ruined event. Feature 008 T0.1 settles it from documentation; T0.2 only on a disposable project, never on the live one |
+| Supabase auth email | a few per hour | Fails *silently*: the app says "link sent" and nothing arrives. Organizers only — and with 2-4 reviewers now expected, several people sign in at once on event morning. **A paid plan does not fix this** (Feature 008 §12b) |
 | Supabase project pause | after 7 idle days | Wake it before an event |
+| Supabase Pro, for comparison | $25/mo: 250GB egress, 100GB storage, no pause | Not taken. **Pending decision for the February 2027 course** — see the open-decisions table in `CONSTITUTION.md` (row 7) and Feature 008 §11, which sets the criteria, the thresholds and the 2026-11-20 deadline. Money resolves egress, storage and the idle pause; it does **not** resolve moderation throughput, slideshow recency at 1500 photos, the absence of bulk download, or the auth-email rate limit |
 | R2 storage | 10GB | ~2,500 originals. **Unverified and gating**: whether a payment method is required inside the free allowance, and whether the ceiling refuses writes or bills silently (Feature 006 T0.1). If it bills silently, Archive mode is cut rather than moved to Supabase |
 | R2 egress | unmetered | The reason it was chosen |
 | Vercel bandwidth | 100GB/mo (Hobby) | Far above need |

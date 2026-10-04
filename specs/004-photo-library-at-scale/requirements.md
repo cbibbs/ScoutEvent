@@ -95,6 +95,13 @@ photo ever approved.
   "Slideshow" section — separate from Needs Review and Library —
   listing only approved photos currently in the slideshow, in the same
   order the slideshow itself plays them.
+  **Put in question by Feature 008 (US-28, design §7):** if the screen
+  is bounded to the most recent N approved photos to fix recency at
+  1500, this section would list photos the screen never reaches, and
+  "the same order the slideshow itself plays them" becomes false.
+  Whatever implements that change must amend this criterion rather than
+  leave it standing — it is exactly the kind of quietly invalidated
+  requirement `CONSTITUTION.md` names. Not yet changed.
 - THE SYSTEM SHALL let the organizer select photos in this section and
   remove them from the slideshow in bulk, using the same selection
   mechanism as US-13.

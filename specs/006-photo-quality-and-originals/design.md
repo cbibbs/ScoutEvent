@@ -458,6 +458,17 @@ moved), and how revalidation is accounted — whether a `304` is billed as
 a request, and whether CDN-cached bytes count as egress. These size the
 headroom; they no longer decide where display copies live.
 
+**Partially answered (Feature 008 §0, 2026-10-04):** the allowance is
+**5GB/mo**, not 2GB, and there is a **second, separately metered 5GB
+cached-egress allowance** this section did not know existed. The
+accounting questions remain open, and they stopped being a
+headroom-sizing curiosity the moment a 50-80 viewer event appeared:
+which meter a CDN-served display copy lands on is a ~60× swing on that
+event's largest egress term (Feature 008 §2c). Wherever this design
+reasons against "2GB", read 5GB — none of §1a's conclusions turn on it,
+because the bulk-download case that decided it is ~6GB at a real
+course's scale and exceeds the larger figure too.
+
 ## 2. Data model
 
 Additive migration, same approach as Feature 002's:

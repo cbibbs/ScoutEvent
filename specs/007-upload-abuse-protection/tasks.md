@@ -17,24 +17,38 @@ where applicable, verified) — per `specs/CONSTITUTION.md`.
       (design §2, §6). Same migration file; raises `'event photo limit
       reached'`, checked after the upload-window and pause checks and
       before the insert.
-- [ ] T1.3 Apply to the live Supabase project and verify, same method as
-      Features 001/002. **Not done** — no Supabase access token in this
-      session. Reconfirmed live this round that `photo_limit` and
-      `uploads_paused` both still don't exist
-      (`42703 column events.uploads_paused does not exist` via a direct
-      REST query), and that `event_photo_count()` isn't in the schema
-      cache yet either (`PGRST202`). Run
-      `20260921000000_upload_abuse_protection.sql` in the SQL Editor,
-      same way as the two prior migrations.
+- [x] T1.3 Apply to the live Supabase project and verify, same method as
+      Features 001/002. **Applied 2026-09-21** via the Management API
+      once an access token was available, and verified object by object
+      rather than from the success status: `events.photo_limit`
+      (`integer`, `not null`, default `500`), `events.uploads_paused`
+      (`boolean`, `not null`, default `false`),
+      `events_photo_limit_check` (`CHECK ((photo_limit > 0))`),
+      `event_photo_count()` (`security definer`, `stable`, execute
+      granted to `anon` and `authenticated`), all five `submit_photo()`
+      guards, the widened storage DELETE policy, the bucket
+      `file_size_limit` of 8388608, and `events` added to the
+      `supabase_realtime` publication.
+
+      Two live confirmations worth keeping. The security-definer count
+      earns its place: on the Wood Badge event `anon` sees 8 photos
+      through RLS while `event_photo_count()` returns 12, so a plain
+      anonymous count would have undercounted the cap by a third.
+      And the refusal strings in the deployed function match
+      `UploadForm.tsx` byte for byte — `'uploads are closed for this
+      event'`, `'uploads are paused for this event'` and `'event photo
+      limit reached'` — so the client's error mapping works against the
+      live function rather than only against the migration file.
 - [ ] T1.4 Set a `file_size_limit` on the `photos` bucket so oversized
       objects are refused by the storage layer, not only by the browser
       (design §3). **Superseded by T7.4**: `storage.buckets` is an
       ordinary table, so this is now an `update storage.buckets set
       file_size_limit = ...` statement in
       `20260921000000_upload_abuse_protection.sql` itself, not a
-      dashboard click — see T7.4. Still blocked on T1.3 (nothing in that
-      migration is applied yet); README.md ("Setting up Supabase", step
-      3) documents it as what the migration does.
+      dashboard click — see T7.4. Applied with the rest of that
+      migration under T1.3; verified live as
+      `storage.buckets.file_size_limit = 8388608`. README.md ("Setting
+      up Supabase", step 3) documents it as what the migration does.
 
 ## Phase 2 — Gate the join QR on moderation (US-21)
 

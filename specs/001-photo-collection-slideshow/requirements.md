@@ -101,6 +101,15 @@ running on a screen at the event without touching it.
 - WHEN a new photo is approved while the slideshow is open, THE SYSTEM
   SHALL include it in the rotation without requiring a manual page
   refresh.
+  **Amended by Feature 008 (US-28):** at 1500 photos this is still
+  literally true and no longer means what it was written to mean. Every
+  client starts at the oldest photo and a full pass takes over two
+  hours, so a photo "in the rotation" may be hours from being shown and
+  a viewer watching for ten minutes sees only the event's opening. The
+  requirement now carries a *bound*: a newly approved photo must appear
+  within a stated time, and a viewer must see recent activity within a
+  few minutes. Feature 008 §7 holds the shape of the fix and the
+  tension it has with egress; the behaviour has **not** changed yet.
 - IF an event has zero approved photos, THE SYSTEM SHALL show a
   waiting/empty state instead of a blank screen.
 - THE SYSTEM SHALL let the organizer configure the slideshow's
