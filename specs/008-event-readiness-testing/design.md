@@ -353,6 +353,19 @@ answer and the options in §5d largely not.
 
 ### 5c. Concurrent review is new risk, not free capacity
 
+> **Update (Feature 009).** The feature this section anticipates now
+> exists as a spec: `specs/009-multiple-approvers/`. It takes the three
+> consequences below as design input — the unconditional
+> `update … eq("id", …)` becomes a write carrying the status the
+> reviewer was shown (009 §6), and the `.range()` paging becomes keyset
+> paging so no undecided photograph is skipped (009 §7a) — and it
+> absorbs the four-step test below as its own T6.3, to be run at the
+> dry run. The *first* consequence is deliberately **not** removed:
+> two reviewers entering together are still handed overlapping
+> photographs, because partitioning the queue was considered and
+> rejected (009 §6). What is removed is losing a decision silently and
+> skipping photographs silently.
+
 Several reviewers is a capability that **does not exist yet** — it is
 its own feature, specced separately, and nothing here designs it. But
 it introduces a failure mode this plan must name, because the plan
@@ -830,6 +843,16 @@ this is a live failure on the critical path with no visible cause, and
 it is the one risk on this list that **the plan decision does not
 touch** (§11e).
 
+> **Re-scoped by Feature 009 (design §13).** Co-approvers are admitted
+> by a shareable link and never receive an email at all — that is one
+> of the reasons the link design was chosen over invitations (009 §1).
+> The number of people signing in on course morning therefore falls
+> from "2-4 reviewers plus the organizer" to **the owner alone**, which
+> is comfortably inside "a few per hour". The risk shrinks to a single
+> sign-in, and the day-before mitigation below has one person to cover.
+> It is not *gone*: one silently-undelivered link to the one person who
+> owns the event is still an event-morning failure.
+
 Test (T6.1): have the real number of people who will sign in do so
 within a few minutes, at least two weeks before the course, and record
 how many links arrive and how long they take. Testing it consumes the
@@ -870,7 +893,7 @@ invalidate anything by itself.
 | **Feature 001 US-5** ("enters the rotation without a refresh") | True in letter, false in effect at 1500 photographs (§7) | Amended by US-28 here; must be amended again by whatever implements the bounded working set |
 | **Feature 004 US-15** ("in the same order the slideshow itself plays them") | False if the screen plays a bounded recent subset (§7) | The §7 change |
 | **Feature 004 design §5** (thumbnails deferred "until there's a real event to measure against") | This is that event; §2b(4) and §5b are the measurement | T4.1, T2.4 |
-| **Feature 004 design §4** (review session snapshot) | Unsafe with concurrent reviewers (§5c) | The multi-reviewer feature; test specified in T4.3 |
+| **Feature 004 design §4** (review session snapshot) | Unsafe with concurrent reviewers (§5c) | **Done:** amended by Feature 009 design §7 (fixed batch, live remaining count, keyset paging); test handed to Feature 009 T6.3 |
 | **Feature 005 US-17 / Feature 007 US-21** (QR gated on moderation) | May not survive 1500 photographs (§5d) | Only if T4.1/T4.2 show review cannot keep pace |
 | **Feature 006 T0.4** (confirm the egress allowance) | Partially answered: the allowance is 5 GB, not 2 GB; cached egress exists and is metered separately (§0) | Done here; the 304-billing and cached-egress-accounting halves remain, and T2.2 answers them |
 | **Feature 006 §1a / tasks preamble** (reasoning quoted against "a 2 GB monthly allowance") | The premise figure is wrong; the conclusion (originals to R2) is **unchanged and strengthened** — 6 GB against 5 GB is still an impossible download (§8b) | Noted in §0; the reasoning does not need redoing |
@@ -883,8 +906,11 @@ New dependencies with dates, none of them built here:
 
 - **Bulk download** (deferred since Feature 001 §7): specced E−10,
   deployed E−7, exercised E−4 (§8a).
-- **Multi-reviewer**: its own feature, specced separately. Must be
-  deployed by E−7 to be exercised in the dry run, and must pass T4.3.
+- **Multi-reviewer**: **specced as Feature 009** (2026-10-04).
+  Scheduled Phases 1-2 by 2026-10-30 and the rest by 2026-11-27 —
+  ahead of the E−7 deadline and deliberately clear of the post-gate
+  mitigation window (Feature 009 §13). Must pass T4.3, run as Feature
+  009 T6.3 at the dry run.
 - **Feature 006 Phases 0 and 3** (originals to R2): required *only* if
   the course expects full-resolution photographs. Decide at the gate;
   gated in turn on Feature 006 T0.1 (§8b).

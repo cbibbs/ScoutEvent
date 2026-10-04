@@ -16,10 +16,14 @@ specs (design §14).
 **2027-02-05**; the brief says "February 2026, four months out" and
 those cannot both be true given today's date (2026-10-04).
 
-- [ ] **T-0 Confirm the actual course dates before anything below is
+- [x] **T-0 Confirm the actual course dates before anything below is
       scheduled.** Every date in this file is derived from E and moves
       with it. This is thirty seconds of work and invalidates the whole
       timeline if skipped.
+      **Confirmed 2026-10-04 with the organizer (recorded in Feature
+      009 design §13): the course is February 2027 and E = 2027-02-05,
+      exactly as this file was anchored.** Every date in the table
+      below therefore stands as written; nothing moves.
 
 | Milestone | Date (E = 2027-02-05) | Phase |
 |---|---|---|
@@ -209,13 +213,23 @@ independent caches, not `curl` loops (design §9b).
       measured rate. The output of this task is one sentence: *"N
       reviewers can / cannot keep pace, at R photographs per person per
       day."*
-- [ ] T4.3 **Write the concurrent-review test, to be run later.**
+- [x] T4.3 **Write the concurrent-review test, to be run later.**
       Cannot be executed now — nothing lets a second person review an
       event's photographs (design §5c). Record the four-step procedure
       from design §5c and its pass condition as a deliverable to the
       multi-reviewer feature. **This task is complete when the test is
       written and handed over, and it must say so rather than being
       ticked as though the risk were cleared.**
+      **Written (design §5c) and handed over: the multi-reviewer
+      feature is `specs/009-multiple-approvers/`, which absorbs the
+      four steps and the pass condition verbatim as its T6.3, to be
+      run with four real devices at the dry run (2027-01-08).**
+      Ticked for the hand-over only. **The risk is not cleared** — no
+      step of the test has been run, and it cannot be until Feature
+      009's Phases 1-5 are deployed. Feature 009 Phase 1 addresses the
+      two defects design §5c predicted (the unconditional write and
+      the `.range()` paging); whether that is sufficient is what T6.3
+      measures.
 - [ ] T4.4 From T4.2's sentence, take the position design §5d requires:
       option A (batch review), B (grid at scale), C (decouple the QR —
       a safety change needing the owner's recorded decision) or D (no).
@@ -267,6 +281,14 @@ T2.3, T3.1, T3.2, T3.4, T4.1, T4.2.
 
 ## Phase 6 — Event-day readiness (US-31)
 
+- [ ] T6.1 **Re-scoped by Feature 009 (design §13):** co-approvers are
+      admitted by a link and never receive an email, so the number of
+      people signing in on course morning falls from "2-4 reviewers
+      plus the organizer" to **the owner alone**. Test accordingly —
+      one sign-in, timed, plus the day-before operational mitigation
+      which now only has to work for one person. The original task
+      text stands below for anyone running this *before* Feature 009
+      is deployed, when the full staff count still signs in.
 - [ ] T6.1 **Sign-in email at real staff count**, at least two weeks
       before the course and never on course week (design §12b). Have
       the actual number of people who will sign in do so within a few

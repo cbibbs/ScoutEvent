@@ -21,7 +21,7 @@ wins.
 |---|---|---|
 | App framework | Next.js 16 (App Router, TypeScript) | See "Framework specifics" below — 16 differs from older App Router material in ways that have already caused bugs here |
 | Hosting | Vercel (Hobby) | Free. Hobby forbids commercial use; fine for a unit running its own events, not fine if this is ever sold or run for others |
-| Auth | Supabase Auth, email magic link | Organizers only. Guests never authenticate |
+| Auth | Supabase Auth: email magic link for owners, **anonymous sign-in for co-approvers** | Owners sign in by email. A co-approver claiming an approver link gets a silent anonymous session, so RLS still keys on a real `auth.uid()` (Feature 009 design §1d). Guests never authenticate. **Anonymous sessions carry the `authenticated` role**, so any policy written `to authenticated` applies to them — the `events` write policy therefore carries an `is_anonymous` guard (Feature 009 §1e), without which anyone holding the public anon key could create events |
 | Database | Supabase Postgres | RLS is the access control layer; the browser talks to it directly |
 | Display photos | Supabase Storage | 1600px/2560px copies — every screen reads these. **Public-read today; decided to become a private bucket read through signed URLs** (Feature 006 design §6, `CONSTITUTION.md` decision 1). Not yet built |
 | Original photos | Cloudflare R2, private bucket | Specced in Feature 006, not yet built, and gated on an unanswered billing question (T0.1). Chosen for free egress, not capacity, and only for originals — see that design's §1a for why display copies did not follow |
@@ -52,6 +52,16 @@ by default.
 
 - **Postgres**: `events` and `photos` rows. Photo rows carry storage
   paths, never image bytes.
+- **Postgres**, co-approvers (Feature 009): `event_approver_links` —
+  one row per event holding the approver link's token and how many
+  places it admits, readable by the owning organizer and nobody else;
+  and `event_approvers` — one row per admitted person, holding an
+  opaque user id and a claim time and **deliberately nothing else**.
+  Nothing anywhere records which reviewer decided which photograph
+  (Feature 009 §10). Two consequences worth keeping in mind: the
+  approver token must never move onto `events`, whose SELECT policy is
+  `using (true)` and therefore world-readable; and deleting a link row
+  cascades every admission it granted, which is how revocation works.
 - **Supabase Storage**, bucket `photos`: display copies at
   `{event_id}/{uuid}.jpg`. The bucket is **public-read today**, which
   means every display copy ever uploaded is fetchable by anyone holding
@@ -75,9 +85,18 @@ across every feature and should keep holding:
    "what status does it start in", so that logic exists once, server
    side, and cannot be argued with by a client. Feature 006's signing
    endpoint follows the same shape for the same reason.
-2. **Organizers see and change only their own events' photos.** Every
-   organizer-facing query relies on this rather than filtering in the
-   client.
+2. **A photograph may be read and changed by the people who moderate
+   its event.** Until Feature 009 that meant the owning organizer
+   alone, and every policy spelled out `organizer_id = auth.uid()` in
+   nine places. It is now one predicate — `can_moderate_event(event_id)`
+   — meaning *the owner, or someone holding a place on that event's
+   approver link*, and every photo and storage policy calls it rather
+   than restating it. Organizer-facing queries still rely on the
+   policy rather than filtering in the client. Note what did **not**
+   move: `events` itself stays owner-only, which is what keeps
+   settings, the photo limit, the moderation toggle and Stop uploads
+   out of a co-approver's hands by construction rather than by hiding
+   buttons (Feature 009 §0, §4).
 3. **Image bytes should be governed by the same predicate as the rows
    that point at them.** Decided, not yet true: the `photos` bucket is
    public-read, so today rule 2 governs the row and nothing governs the
@@ -107,7 +126,7 @@ check whether its conclusion depended on it before reusing it (Feature
 | Supabase cached egress | **5GB/mo, metered separately** (verified 2026-10-04) | Newly recorded. **Which of the two meters a CDN-served display copy lands on is unknown and is the single most decision-relevant unmeasured fact in the project** — a ~60× swing on the largest egress term, because every slideshow client starts at the same photo and requests the same objects. Feature 008 T2.2 measures it |
 | Supabase realtime | 200 concurrent peak connections; 2M messages/mo | Messages have ~6× headroom at this project's scale (Feature 008 §4). Concurrency is unclear: each slideshow client opens **two** channels over one socket, so 80 viewers is either 85/200 or 170/200 depending on what the meter counts (Feature 008 T0.3). On refusal, clients fall back to the 30s poll — which is the most expensive query in the app, so the failure mode is an egress rise, not an outage |
 | **Exceeding any of the above** | **unknown** | Not documented on the pricing page. Bill, throttle, refuse, or stop the project — the difference between an irritation and a ruined event. Feature 008 T0.1 settles it from documentation; T0.2 only on a disposable project, never on the live one |
-| Supabase auth email | a few per hour | Fails *silently*: the app says "link sent" and nothing arrives. Organizers only — and with 2-4 reviewers now expected, several people sign in at once on event morning. **A paid plan does not fix this** (Feature 008 §12b) |
+| Supabase auth email | a few per hour | Fails *silently*: the app says "link sent" and nothing arrives. **A paid plan does not fix this** (Feature 008 §12b). Feature 008 sized this at "2-4 reviewers plus the organizer signing in on event morning"; **Feature 009 shrinks it to the owner alone**, since co-approvers are admitted by a link and never receive an email. That is a reduction in exposure, not a fix |
 | Supabase project pause | after 7 idle days | Wake it before an event |
 | Supabase Pro, for comparison | $25/mo: 250GB egress, 100GB storage, no pause | Not taken. **Pending decision for the February 2027 course** — see the open-decisions table in `CONSTITUTION.md` (row 7) and Feature 008 §11, which sets the criteria, the thresholds and the 2026-11-20 deadline. Money resolves egress, storage and the idle pause; it does **not** resolve moderation throughput, slideshow recency at 1500 photos, the absence of bulk download, or the auth-email rate limit |
 | R2 storage | 10GB | ~2,500 originals. **Unverified and gating**: whether a payment method is required inside the free allowance, and whether the ceiling refuses writes or bills silently (Feature 006 T0.1). If it bills silently, Archive mode is cut rather than moved to Supabase |

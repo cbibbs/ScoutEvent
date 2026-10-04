@@ -24,6 +24,10 @@ Mirrors the pattern already proven in `Slideshow.tsx`
 - No RLS changes needed: the organizer's existing SELECT policy
   (`specs/001-photo-collection-slideshow/design.md` §3) already lets
   them read every photo on their own events regardless of status.
+  **Amended by Feature 009 design §4:** that policy is now
+  membership-based (`can_moderate_event`), so the same subscription
+  serves a co-approver — including the pending rows they could not see
+  before. RLS applies to realtime, so nothing else about this changes.
 
 ## 2. Slideshow-removal control (US-11)
 

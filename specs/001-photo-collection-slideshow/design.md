@@ -107,6 +107,16 @@ for the slideshow/gallery queries.
   events where events.id = photos.event_id and events.organizer_id =
   auth.uid())`) — US-4, US-6.
 
+> **Amended (Feature 009 design §4).** The `photos` `select`, `update`
+> and `delete` predicates are no longer owner-only: each now reads
+> `public.can_moderate_event(photos.event_id)`, true for the owning
+> organizer **or** for someone holding a place on that event's approver
+> link, and the storage `delete` policy follows. The rule is defined
+> once in that function instead of being restated in each policy. The
+> `events` line above is unchanged and stays owner-only, which is what
+> keeps event settings, the photo limit, the moderation toggle and Stop
+> uploads out of a co-approver's reach by construction.
+
 **Storage bucket `photos`:** public-read bucket (object paths are
 `event_id/uuid.jpg` — unguessable, not listable by guests since bucket
 listing is disabled by policy). Write access restricted to authenticated

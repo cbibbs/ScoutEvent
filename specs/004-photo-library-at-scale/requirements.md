@@ -37,6 +37,12 @@ size.
   more, rather than fetching every photo for the event in one query.
 - THE SYSTEM SHALL show an accurate total count (e.g., "Showing 1-24 of
   220") so the organizer knows how much is left.
+- **Added by Feature 009 (US-37, design §7a):** THE SYSTEM SHALL NOT
+  omit an undecided photo from a paginated queue because other photos
+  left that queue while the organizer was working. Offset-based paging
+  over a shrinking filter does exactly that, and at 1500 photos with
+  several reviewers it means photos nobody has looked at are never
+  shown to anybody.
 - Consistent with Feature 003's realtime requirement (US-10): an update
   to a photo already loaded on the current page(s) SHALL still update
   live. A brand-new upload SHALL NOT be silently inserted into an
@@ -79,10 +85,26 @@ without hunting for tiny buttons in a grid.
   photos are uploaded while a review session is in progress, THE SYSTEM
   SHALL NOT add them to that session's count or queue — the organizer
   reaches them by starting a new session.
+  **Amended by Feature 009 (US-37, design §7).** The *set* a session
+  covers is still fixed at the moment it opens, and uploads arriving
+  afterwards still stay out of it — that intent is kept. What changes
+  is the number shown: with 2-4 reviewers working the same queue, a
+  frozen "of 47" describes one person's share of everyone's work and is
+  false from the second decision onward. The session now shows two
+  labelled figures: **how many of that fixed set are still awaiting
+  review** (from the server, falling as the whole team works) and
+  **what this reviewer has decided** in this session. The fixed total
+  as a single denominator is withdrawn.
 - WHEN an organizer reaches the end of the session's photos, THE SYSTEM
   SHALL show a completion state summarizing how many were
   approved/rejected vs. skipped, rather than silently returning to the
   grid.
+  **Amended by Feature 009 (US-37):** "the end" is when nothing in the
+  fixed set is still awaiting review — whether this reviewer decided it
+  or another did — rather than after a count of steps. The completion
+  state states the reviewer's own tally, says that others may have
+  decided part of the set, and says how many photos have arrived since
+  the session began.
 
 ### US-15: Dedicated slideshow section
 

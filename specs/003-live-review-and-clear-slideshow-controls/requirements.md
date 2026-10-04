@@ -21,6 +21,15 @@ event, not just once.
   organizer in another tab, or in principle another organizer), THE
   SYSTEM SHALL reflect that change on an open management page without a
   reload.
+  **Amended by Feature 009 (US-36, design §8).** "In principle another
+  organizer" is now real and routine: 2-4 co-approvers review the same
+  event concurrently. This criterion stops being a nicety and becomes
+  the mechanism by which a reviewer learns the photograph in front of
+  them has just been decided by somebody else. It is backed by a
+  guarantee the realtime path cannot give on its own — a decision
+  carries the status the reviewer was shown, so a second decision on an
+  already-decided photograph is refused by the database rather than
+  silently overwriting the first.
 - THE SYSTEM SHALL use the same realtime-plus-polling-fallback approach
   already established for the slideshow (`specs/001-photo-collection-slideshow/design.md`
   §6), so the page self-heals if a realtime connection drops.

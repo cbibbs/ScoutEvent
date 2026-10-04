@@ -85,6 +85,17 @@ the storage every other event depends on.
 
 ### US-23: The organizer can stop uploads in one action
 
+> **Amended by Feature 009 (US-34, design §0).** "The organizer" here
+> and in US-22 means the **owner** — the account that created the
+> event — and now does so explicitly, because an event may also have
+> co-approvers. Stopping and resuming uploads, raising the photo
+> limit, and every other event setting stay owner-only; a co-approver
+> may act on photographs and nothing else. Feature 009 §0 records the
+> accepted cost: if the owner is off-site and uploads must stop,
+> nobody else can stop them. Feature 009 US-34 requires co-approvers to
+> *see* the upload state so they can tell the owner, which is the only
+> mitigation that exists.
+
 As an organizer watching something inappropriate appear, I want to stop
 uploads immediately, without navigating a settings form.
 

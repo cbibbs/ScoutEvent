@@ -675,7 +675,19 @@ in SQL, next to the rows it reads:
   policy already on `photos` (Feature 002 design §3): the object is
   signable by an anonymous caller only while a `photos` row with that
   `storage_path` is `approved` **and** `in_slideshow`, and by the owning
-  organizer at any status. The enforcement point stays RLS, per
+  organizer at any status.
+  **Amended by Feature 009 design §11: the organizer branch must be
+  `public.can_moderate_event(p.event_id)`, not
+  `organizer_id = auth.uid()`.** A co-approver is neither "an anonymous
+  caller" nor "the owning organizer", so under the predicate as
+  originally written they could sign only approved, in-slideshow
+  objects — meaning every pending photograph in the review queue and
+  every rejected one in the Library becomes a broken image on the
+  screens whose entire purpose is looking at them. The failure is total
+  and arrives silently with a deploy nobody associates with the
+  multi-approver feature. The mirrored policy is the same predicate as
+  the one on `photos`, which is exactly what this bullet asks for — it
+  is only that the predicate on `photos` has since changed. The enforcement point stays RLS, per
   PROJECT.md; no new endpoint, no second copy of the rule, and no
   credentials anywhere near the client.
 

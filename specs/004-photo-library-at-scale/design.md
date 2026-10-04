@@ -65,6 +65,18 @@ if (slideshowFilter !== "any") q = q.eq("in_slideshow", slideshowFilter === "yes
 if (search.trim()) q = q.ilike("uploader_name", `%${search.trim()}%`);
 ```
 
+> **Amended by Feature 009 design §7a.** The Needs Review query above
+> pages with `.range(offset, …)` over `status = 'pending'`, which is a
+> *shrinking* set once more than one person is deciding: after ten rows
+> leave the filter, `range(10, 19)` returns what were rows 20-29 and
+> rows 10-19 — still pending, still nobody's work — are never shown to
+> anyone. Needs Review (here and in `ReviewQueue`) therefore pages by
+> **keyset**: order by `(created_at, id)` and fetch rows strictly after
+> the last one held. Slideshow and Library keep `.range()`; their sets
+> grow rather than shrink under concurrent decisions, so the failure
+> mode there is an occasional repeat rather than an omission, which is
+> the right way round.
+
 `NEEDS_REVIEW_PAGE_SIZE`/`SLIDESHOW_PAGE_SIZE`/`LIBRARY_PAGE_SIZE` (start
 at 8/16/24 — matches the canvas mockup's "Showing 1-8 of 47" / "Showing
 1-16 of 58" / "Showing 1-24 of 220") are tuning constants, not protocol.
@@ -158,6 +170,21 @@ US-6: only the owning organizer).
 
 - Reuses the same oldest-first paginated query as the grid; shows one
   photo at a time, full-size, with Approve/Reject/Skip.
+> **Amended by Feature 009 design §7 (US-37).** Everything in this
+> section below was written for one reviewer and is wrong for four.
+> `sessionTotal` as a *count* is replaced by a **horizon** — the
+> `(created_at, id)` of the newest pending photo when the session
+> opens — and the session walks pending photos at or before it, in
+> keyset order. That keeps this section's actual intent (uploads
+> arriving mid-session stay out; the session terminates) while fixing
+> what a count cannot: photos decided by *other* reviewers drop out of
+> the walk instead of shifting it. "N of TOTAL" becomes two labelled
+> figures — the reviewer's own tally, and how many of the batch are
+> still waiting (server count, live). "Stop advancing after
+> `sessionTotal` items" is withdrawn; the session ends when nothing in
+> the batch is still pending. Read the three bullets below with that
+> substitution.
+
 - **Snapshot, not live.** On open, `sessionTotal` is set once to the
   pending count at that moment (from §3's count, or the first page's
   `count`). The "N of TOTAL" progress uses this fixed `sessionTotal` for

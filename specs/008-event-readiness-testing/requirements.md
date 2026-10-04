@@ -213,6 +213,9 @@ alongside running the course.
   SHALL state what must be tested once the capability to have several
   reviewers exists. This feature cannot verify it: there is no way
   today for a second person to review an event's photographs at all.
+  **Satisfied in part by Feature 009**, which builds the capability and
+  carries the test; the risk stays open until that test is actually
+  run at the dry run (Feature 009 T6.3).
 - WHEN the measured throughput shows that review at this volume cannot
   keep pace with uploads, THE PROJECT SHALL say so and name the change
   that follows, rather than recording a workaround. IF that change is
@@ -303,9 +306,11 @@ known to work at all before anyone measures how they work at scale.
 ## Out of scope (this feature)
 
 - **Building the capability for several people to review one event's
-  photographs.** It is its own feature, specced separately. This
-  feature states the throughput it must deliver and the concurrency
-  risk it introduces, and nothing more.
+  photographs.** It is its own feature, **now specced as Feature 009**
+  (`specs/009-multiple-approvers/`, 2026-10-04). This feature states
+  the throughput it must deliver and the concurrency risk it
+  introduces, and nothing more; Feature 009 takes that risk as design
+  input and runs this feature's T4.3 as its own T6.3.
 - **Building bulk retrieval.** US-30 establishes it as a prerequisite
   with a date; the design of it is not here.
 - **Building whatever mitigations the measurements turn out to

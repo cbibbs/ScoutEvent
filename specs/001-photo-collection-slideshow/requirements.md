@@ -127,6 +127,15 @@ can curate the collection and remove anything unwanted.
   and metadata permanently.
 - THE SYSTEM SHALL let an organizer see only their own events and photos
   for those events; organizers SHALL NOT see other organizers' events.
+  **Amended by Feature 009 (US-34, US-35).** An owner may now admit
+  **co-approvers** to one event through a shareable approver link. A
+  co-approver sees that event's photographs and may act on them —
+  approve, reject, restore, curate the slideshow, delete — and sees
+  **nothing else**: not the owner's other events, not their existence
+  or count. The second half of this criterion therefore still holds in
+  full; the first is narrowed to "only the events they own or hold a
+  place on". Changing an event — its settings, photo limit, moderation
+  toggle, upload pause, or existence — remains the owner's alone.
 
 ### US-7: Cost and operational safety
 
@@ -142,7 +151,10 @@ services, so it costs nothing to operate at scout-troop scale.
 
 - Video collection (photos only).
 - Guest accounts / guest login.
-- Multiple organizers per event.
+- ~~Multiple organizers per event.~~ **No longer out of scope** —
+  specced as co-approvers in Feature 009 and recorded as decided in
+  `CONSTITUTION.md`'s open decisions (row 3). Guests still never
+  authenticate; a co-approver is not a guest.
 - Automated (AI) content moderation.
 - Paid/premium tiers, billing.
 - DSLR tethering, photo booth hardware integration.
