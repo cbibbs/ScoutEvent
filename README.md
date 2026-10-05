@@ -109,6 +109,54 @@ If any of these become a real constraint, the fix is almost always
 "delete old events' photos" or "wake the Supabase project," not a code
 change.
 
+## Cleaning up orphaned photo files
+
+An *orphan* is a file in the `photos` bucket with no `photos` row. They
+come from photo deletions made before
+`20261005000000_storage_select_policy_for_delete.sql` (which left the file
+behind), and from guest uploads Storage accepted but `submit_photo()`
+then refused. The app has no screen for them — the fix stops new ones, it
+does not find old ones. Orphans are still publicly fetchable by URL, so
+clear them.
+
+1. **Find them.** In **SQL Editor** (runs as `postgres`, so RLS does not
+   hide anything):
+
+   ```sql
+   select o.name, o.created_at, (o.metadata->>'size')::bigint as bytes
+   from storage.objects o
+   where o.bucket_id = 'photos'
+     and o.created_at < now() - interval '1 hour'   -- skip uploads in flight
+     and not exists (select 1 from public.photos p where p.storage_path = o.name)
+   order by o.created_at;
+   ```
+
+2. **Delete them in the dashboard**: **Storage → photos →** open the
+   event's folder (`name` above is `{event_id}/{file}.jpg`), tick the files,
+   **Delete**. Do **not** `delete from storage.objects` in SQL: that removes
+   the bookkeeping row but not the stored bytes, which would hide the
+   orphan from step 1 while still serving it and still counting against
+   the 1GB.
+
+3. **Check it worked**: a cache-busted request for the file should now be
+   `400` (not `200`) —
+   `curl -sI "$NEXT_PUBLIC_SUPABASE_URL/storage/v1/object/public/photos/<name>?x=$RANDOM"`.
+
+The opposite problem — a `photos` row whose file is missing (shown as a
+broken image) — is found with:
+
+```sql
+select p.id, p.event_id, p.storage_path
+from public.photos p
+where not exists (
+  select 1 from storage.objects o
+  where o.bucket_id = 'photos' and o.name = p.storage_path
+);
+```
+
+Deleting such a photo again from Manage Event finishes the job; the app
+recognises that its file is already gone.
+
 ## Project structure
 
 ```

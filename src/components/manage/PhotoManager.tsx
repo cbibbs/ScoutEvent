@@ -11,6 +11,7 @@ import {
   POLL_FALLBACK_MS,
   SLIDESHOW_PAGE_SIZE,
 } from "./constants";
+import { deletePhotos, summarizeFailures } from "./deletePhotos";
 import {
   defaultLibraryFilters,
   matchesLibrary,
@@ -61,6 +62,12 @@ export function PhotoManager({
   );
 
   const [busyIds, setBusyIds] = useState<Set<string>>(new Set());
+  // Outcome of the last delete that did not fully succeed. Persistent (not
+  // an alert()) so a partial bulk failure stays readable and actionable.
+  const [deleteNotice, setDeleteNotice] = useState<{
+    summary: string;
+    reasons: { reason: string; count: number }[];
+  } | null>(null);
   const [loadingMore, setLoadingMore] = useState<Set<string>>(new Set());
 
   // Mobile-only nudge banner; dismiss lasts for this page view (no
@@ -352,17 +359,37 @@ export function PhotoManager({
     updateOne(p, { in_slideshow: false });
   const addToSlideshow = (p: Photo) => updateOne(p, { in_slideshow: true });
 
+  // Shared by single and bulk delete. Storage first, then the row, and the
+  // row only for photos whose file is confirmed gone — see deletePhotos.
+  async function runDelete(photos: Photo[], describe: (deleted: number) => string) {
+    setDeleteNotice(null);
+    setBusyIds((prev) => new Set([...prev, ...photos.map((p) => p.id)]));
+    try {
+      const { deletedIds, failures } = await deletePhotos(supabase, photos);
+      if (deletedIds.size > 0) reconcileAfterDelete(deletedIds);
+      if (failures.length > 0) {
+        setDeleteNotice({
+          summary: describe(deletedIds.size),
+          reasons: summarizeFailures(failures),
+        });
+      }
+    } catch (e) {
+      setDeleteNotice({
+        summary: "Delete stopped unexpectedly. Refresh the page to see what was removed.",
+        reasons: [{ reason: e instanceof Error ? e.message : String(e), count: 1 }],
+      });
+    } finally {
+      setBusyIds((prev) => {
+        const next = new Set(prev);
+        for (const p of photos) next.delete(p.id);
+        return next;
+      });
+    }
+  }
+
   async function deleteOne(photo: Photo) {
     if (!confirm("Delete this photo permanently?")) return;
-    setBusyIds((prev) => new Set(prev).add(photo.id));
-    await supabase.storage.from("photos").remove([photo.storage_path]);
-    const { error } = await supabase.from("photos").delete().eq("id", photo.id);
-    setBusyIds((prev) => {
-      const next = new Set(prev);
-      next.delete(photo.id);
-      return next;
-    });
-    if (!error) reconcileAfterDelete(new Set([photo.id]));
+    await runDelete([photo], () => "This photo could not be deleted.");
   }
 
   async function bulkPatch(ids: Set<string>, patch: Partial<Photo>) {
@@ -380,10 +407,12 @@ export function PhotoManager({
   async function bulkDelete(ids: Set<string>, items: Photo[]) {
     if (ids.size === 0) return;
     if (!confirm(`Delete ${ids.size} photo(s) permanently?`)) return;
-    const paths = items.filter((p) => ids.has(p.id)).map((p) => p.storage_path);
-    await supabase.storage.from("photos").remove(paths);
-    const { error } = await supabase.from("photos").delete().in("id", Array.from(ids));
-    if (!error) reconcileAfterDelete(ids);
+    const photos = items.filter((p) => ids.has(p.id));
+    await runDelete(
+      photos,
+      (deleted) =>
+        `Deleted ${deleted} of ${photos.length} photos. ${photos.length - deleted} could not be deleted and are still selected — fix the cause below, then press Delete again.`,
+    );
   }
 
   return (
@@ -818,6 +847,35 @@ export function PhotoManager({
           </div>
         </div>
 
+        {deleteNotice && (
+          <div
+            role="alert"
+            className="mb-4 rounded-md border border-danger bg-white p-3 text-[13px] text-ink"
+          >
+            <div className="flex items-start gap-3">
+              <p className="flex-1 font-semibold text-danger">
+                {deleteNotice.summary}
+              </p>
+              <button
+                type="button"
+                onClick={() => setDeleteNotice(null)}
+                className="shrink-0 px-1 text-lg leading-none text-ink-faint"
+                aria-label="Dismiss"
+              >
+                &times;
+              </button>
+            </div>
+            <ul className="mt-2 list-disc pl-5">
+              {deleteNotice.reasons.map((r) => (
+                <li key={r.reason}>
+                  {r.count > 1 ? `${r.count} photos: ` : ""}
+                  {r.reason}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         {library.items.length === 0 ? (
           <p className="text-sm text-ink-soft">
             Approved and rejected photos will show up here.
@@ -852,9 +910,12 @@ export function PhotoManager({
                   </button>
                   <button
                     className="btn btn-sm bg-danger text-white"
+                    disabled={[...librarySelected].some((id) => busyIds.has(id))}
                     onClick={() => bulkDelete(librarySelected, library.items)}
                   >
-                    Delete
+                    {[...librarySelected].some((id) => busyIds.has(id))
+                      ? "Deleting…"
+                      : "Delete"}
                   </button>
                   <button
                     className="btn btn-ghost btn-sm text-white/60"
