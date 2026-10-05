@@ -159,6 +159,14 @@ after it (design §4).
       delete of an orphan (Feature 007 §3) all behave as before. This
       is the "widens, never narrows" claim being checked rather than
       asserted.
+      **"As before" is the wrong baseline for the two delete items.**
+      Before `20261005000000`, a storage delete did not work for
+      anyone and a photo delete destroyed the row while leaving the
+      file (Feature 007 §3's correction box). Check both against
+      *intended* behaviour, not against the old one: after that
+      migration, the owner's `remove()` must return the path in
+      `data`, and the file must actually be gone. Reproducing the old
+      behaviour here is a failure, not a pass.
 - [ ] T2.8 Add the two tables and the three functions to
       `src/lib/supabase/types.ts`, which is hand-maintained.
 
@@ -243,6 +251,17 @@ after it (design §4).
       Confirm Postgres refuses all four, and in particular that the
       photo row and the object both still exist afterwards. US-34's
       last clause. Design §4, §0a.
+      **Run this only after `20261005000000` is applied, or it proves
+      nothing.** Until then the `storage.objects` delete is refused
+      for *everyone*, owner included — there was no SELECT policy and
+      `remove()` needs one — so a co-approver being refused is not
+      evidence that the owner-only predicate is doing any work. After
+      the migration the refusal is attributable to that predicate,
+      which is what this task is checking. Make it meaningful by
+      pairing it: the **owner's** delete of the same object must
+      succeed, the co-approver's must not. A run before the migration
+      must not be recorded as a pass. See design §4 row 9 and
+      `PROJECT.md` Access control rule 4.
 
 ## Phase 6 — Verification
 

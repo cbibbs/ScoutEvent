@@ -592,6 +592,26 @@ key on the event folder, which makes in-app deletion of orphans
 possible; the Storage dashboard's folder delete is the operational
 fallback and should be written into the run book as such.
 
+> **Corrected 2026-10-05.** The sentence above overstated what
+> Feature 007 delivered: until
+> `20261005000000_storage_select_policy_for_delete.sql` is applied,
+> **in-app deletion removes no file at all** — not an orphan, not an
+> ordinary photograph — because `remove()` also needs a SELECT policy
+> on `storage.objects` and there was none (Feature 007 §3's
+> correction box). This matters more here than anywhere else in the
+> specs, because the whole deletion step exists to **free storage**,
+> and a run book step that deletes 1500 rows while freeing zero bytes
+> would leave the storage ceiling exactly where it was — and would do
+> it silently, with the dashboard still showing ~0.6GB and the
+> organizer believing the event was cleaned up. The pre-downgrade
+> deletion in §11e / T7.3 depends on bytes actually going away, so
+> **applying that migration is a prerequisite of the retention run
+> book and of any downgrade that waits on freed storage**, not an
+> optional tidy-up. Verify on one photograph before trusting the
+> step on 1500 (`PROJECT.md`, "Applying `20261005000000` is a release
+> gate"). The Storage dashboard's folder delete remains the
+> fallback, and is the one route that was never affected.
+
 ### 8d. The window is an input, not a policy
 
 Two weeks is recorded as **what one organizer wants for one course**.

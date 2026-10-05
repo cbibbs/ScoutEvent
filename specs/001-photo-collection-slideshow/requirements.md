@@ -89,6 +89,18 @@ publicly, so inappropriate content doesn't reach the slideshow.
   and its row permanently. Delete is the only action that destroys a
   photo (see US-6, and Feature 003 US-11 for why the two must stay
   visibly distinct).
+  **Unmet in production until 2026-10-05, and restated unchanged.**
+  Deleting a photo removed the row and left the file reachable
+  indefinitely — the half of this criterion that protects the subject
+  of the photograph was the half that did not happen, and nothing
+  surfaced it because the app showed exactly the right thing. The
+  criterion was correct all along and is not being weakened; it is
+  flagged here so nobody reads it as a description of what the system
+  did. Fixed by the change recorded in `PROJECT.md`, "Reach changes
+  made outside a feature", **which must be applied to the live
+  project before this criterion is true again** — until then
+  deleting refuses outright rather than half-completing.
+  The same correction applies to the identical criterion under US-7.
 
 ### US-5: Live slideshow
 
@@ -124,7 +136,8 @@ can curate the collection and remove anything unwanted.
 - WHEN an organizer views an event, THE SYSTEM SHALL show all photos
   (pending, approved, rejected) in a grid with their status.
 - WHEN an organizer deletes a photo, THE SYSTEM SHALL remove its file
-  and metadata permanently.
+  and metadata permanently. **Unmet in production until 2026-10-05 —
+  see the note on the identical criterion under US-4.**
 - THE SYSTEM SHALL let an organizer see only their own events and photos
   for those events; organizers SHALL NOT see other organizers' events.
   **Amended by Feature 009 (US-34, US-35).** An owner may now admit

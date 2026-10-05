@@ -196,6 +196,19 @@ was written; the implementation followed the spec it was given.
       design.md §3 nor this task ask for that; flagging so it's a
       visible choice rather than a silent gap if it turns out to be
       wanted.
+      **Corrected 2026-10-05 — the scope note above was false.** The
+      policy was rewritten as described, but it made no deletion
+      possible, orphan or otherwise: `storage.objects` had no SELECT
+      policy, which `remove()` also requires, so every delete matched
+      zero rows and returned no error. This task was checked off on
+      the policy text having changed, never on a delete having
+      worked. Left `[x]` because the policy rewrite it specifies did
+      land and is still wanted; the capability claim is retracted —
+      see design §3's correction box and
+      `20261005000000_storage_select_policy_for_delete.sql`.
+      **Re-verify after that migration is applied**: delete one
+      object under an event folder with no `photos` row, as the
+      owner, and confirm a cache-busted GET of it then returns `400`.
 - [x] T6.6 Add "not full" and "not paused" to the QR's visibility
       condition, and show a "this event is full" state on the guest
       upload page instead of the form (design §4, §6). `Slideshow`'s

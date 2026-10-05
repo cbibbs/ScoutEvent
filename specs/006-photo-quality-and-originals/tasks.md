@@ -221,3 +221,12 @@ Only blocks Phase 3. Phases 1-2 can proceed in parallel.
       ever uploaded stays permanently fetchable by URL, including after
       rejection — which is the state Feature 001 §3 accepted and this
       project has now decided against.
+      **Two things that feature must carry, added 2026-10-05 (design
+      §6):** (1) it must replace the photo-delete path's
+      public-endpoint existence probe with an authenticated one **in
+      the same change as the bucket flip**, or deletion stops working
+      the moment the bucket goes private — silently, with every probe
+      returning "unknown"; (2) its mirrored SELECT policy on
+      `storage.objects` is **in addition to**, not a replacement for,
+      the owner SELECT policy added by `20261005000000`. Decide
+      explicitly whether to keep both or fold them, and say which.

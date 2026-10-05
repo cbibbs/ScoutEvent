@@ -105,6 +105,27 @@ supabase.storage.from("photos").remove(selectedPaths); // paths from local state
 supabase.from("photos").delete().in("id", Array.from(selectedIds));
 ```
 
+> **The delete sketch above is superseded, 2026-10-05.** It discards
+> `remove()`'s result and deletes the rows unconditionally, which is
+> the exact shape that let three weeks of deletions destroy rows while
+> leaving every file in the bucket — `remove()` returns
+> `{ data: [], error: null }` when it deletes nothing, so "no error"
+> is not success (Feature 007 §3's correction box). The approve /
+> reject / slideshow sketches above are unaffected and still correct.
+>
+> Delete is now: **files first, rows only for the files confirmed
+> gone**, per photo, in chunks rather than one unbounded request. The
+> ordering is deliberate — a failure after the row delete leaves a
+> fetchable JPEG nothing in the app points at, while a failure after
+> the file delete leaves a broken image a retry finishes, and under
+> `CONSTITUTION.md` principle 2 the first is much the worse. A bulk
+> delete is therefore **partially successful by design** and must
+> report per-photo outcomes; "cleared on a successful bulk action"
+> above has to mean "cleared of the ids that actually went", not all
+> of them. See `PROJECT.md`, "Where the data lives", for how a file
+> is confirmed gone and why that confirmation breaks when Feature 006
+> makes the bucket private.
+
 Same patch shapes as the existing single-photo actions (design.md §2 of
 Feature 002) — a bulk action is that same patch applied to many rows at
 once, not new semantics. Needs Review and Slideshow show selection

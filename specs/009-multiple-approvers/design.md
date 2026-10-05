@@ -556,11 +556,13 @@ hand.
 | 7 | `20260913000000_init.sql:202` | `storage.objects` DELETE | Historical — superseded by #9 |
 | 8 | `20260914000000_slideshow_curation.sql:19` | `photos` SELECT (live) | → `(status='approved' and in_slideshow) or can_moderate_event(photos.event_id)` |
 | 9 | `20260921000000_upload_abuse_protection.sql:171` | `storage.objects` DELETE (live) | **Unchanged (owner-only)**, for the same reason as #6. Feature 007 §3 widened this to cover orphans; it stays owner-scoped |
+| 9a | `20261005000000_storage_select_policy_for_delete.sql` | `storage.objects` SELECT (live) | **Added 2026-10-05, after this table was written. Unchanged by this feature, and must stay so.** `remove()` needs `select` as well as `delete`, and there was no SELECT policy, so *no* storage delete worked for anyone (Feature 007 §3's correction box). The new policy repeats #9's predicate exactly — `organizer_id = auth.uid()`, `to authenticated`. Because that is an **identity match and not a membership check**, an anonymous approver session is excluded by construction even though it carries the `authenticated` role (§1d, §1e). Do not route it through `can_moderate_event`: that would give co-approvers the read half of the power §0a withholds |
 | 10 | `src/app/(site)/dashboard/page.tsx:14` | Which events are listed | Owned events for an account session; **shared events only** for an approver session (§5) |
 | 11 | `src/app/(site)/dashboard/[slug]/page.tsx:34` | Manage-page guard | owner **or** approver; owner-only controls still owner-gated |
 | 12 | `src/app/(site)/dashboard/[slug]/review/page.tsx:25` | Review-page guard | owner **or** approver |
 
-**So only three of the nine SQL sites actually change**: the live
+**So only three of the ten SQL sites actually change** (nine when this
+was written; #9a was added later and does not change either): the live
 `photos` SELECT (#8) and the two halves of `photos` UPDATE (#4, #5).
 The migration recreates those by name (`drop policy if exists` then
 `create policy`, the pattern the existing migrations use), so after it

@@ -736,6 +736,53 @@ owns these:
   Getting this wrong is the one way this privacy change could make the
   projector *less* reliable than leaving it public-read — a bad trade
   however good the privacy is.
+- **Photo deletion breaks on the flip, and fails closed.** Added
+  2026-10-05, after a fix that this section did not anticipate. The
+  delete path now confirms a file is really gone by probing the
+  **public** endpoint — the one read path that answers without
+  consulting RLS — and deletes the `photos` row only on a confirmed
+  "no such object". It has to, because `remove()` returns an empty
+  `data` with no error both when it deleted nothing and when the
+  object was already absent. The moment the bucket goes private that
+  endpoint answers "bucket not found" for every path, so **every probe
+  returns "unknown"**: nothing errors, nothing says why, the
+  organizer is told to try again, and retrying cannot help.
+
+  Deletion fails safe — no row is destroyed while its file survives —
+  but it never completes. And if `remove()` can return an empty `data`
+  on a genuine success, which the vendor's own docstring shows as an
+  example response, then **deletion becomes permanently inoperative**,
+  not merely degraded: the one case that needed the probe is the only
+  case left. On a feature whose whole purpose is making rejected
+  photographs unfetchable, shipping it alongside a broken delete would
+  be a poor result.
+
+  So this feature owns the replacement, in the same change as the
+  flip: an **authenticated** existence check made as the owner — a
+  signed URL, or the installed `storage-js`'s authenticated
+  `exists`/`info` call, whichever that version actually provides —
+  which must still tell "no such object" apart from "denied" apart
+  from "transport failed", because collapsing those is what makes the
+  public probe safe today. See `PROJECT.md`, "Where the data lives",
+  which records the coupling, and the banner comment on `probeObject`
+  in `src/components/manage/deletePhotos.ts`.
+- **The owner SELECT policy added on 2026-10-05 sits *beside* this
+  feature's mirrored policy; it is not a draft of it.** Migration
+  `20261005000000` added SELECT on `storage.objects` for
+  `bucket_id = 'photos'` where the event in the first path segment has
+  `organizer_id = auth.uid()`, `to authenticated` — the exact
+  predicate of the owner DELETE policy, added so that deletion works
+  at all. The policy this section specifies is a different predicate
+  (anonymous callers for `approved` + `in_slideshow`; the organizer
+  branch being `can_moderate_event()` per Feature 009 §11).
+  **Postgres OR-es permissive policies**, so leaving both in place
+  means an owner is covered twice and nothing is narrowed — harmless,
+  because one predicate implies the other for owners. What would not
+  be harmless is assuming the new policy *is* the mirrored one and
+  skipping it, which would leave anonymous slideshow viewers and
+  co-approvers unable to sign anything. Decide explicitly whether to
+  fold `20261005000000`'s policy into the new one or keep it
+  alongside, and say which in the migration.
 
 Two things that must not be lost in the handoff:
 

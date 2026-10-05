@@ -128,6 +128,51 @@ needed:
   limitation, not a solved problem, and building an orphan browser is
   not worth it while the pre-check keeps the routine case from arising.
 
+  > **Correction, 2026-10-05. The paragraphs above are wrong, and the
+  > text is left standing because the way they were wrong is the
+  > lesson.** They are kept verbatim; everything below is the
+  > amendment, and where the two disagree this box wins.
+  >
+  > The widened DELETE policy did **not** make orphan cleanup possible
+  > through the app, because *no* deletion from the `photos` bucket
+  > was possible through the app. `storage.objects` had an INSERT
+  > policy and a DELETE policy and **no SELECT policy at all**, and
+  > the vendor documents `remove()` as needing both `delete` and
+  > `select` on that table. Best-supported reading: the delete could
+  > not resolve an object, matched zero rows, and returned
+  > `{ data: [], error: null }` — no error, nothing deleted. So
+  > neither an orphan nor an ordinary photograph could be removed.
+  > This feature only rewrote the *text* of a policy that was already
+  > inert; it did not make it work, and could not have.
+  >
+  > Confirmed in production on 2026-10-05, three weeks after this
+  > feature shipped: `photos` rows deleted through Manage Event were
+  > gone, while a cache-busted GET of each object still returned
+  > `200`, and a path that never existed returned `400`. Fixed by
+  > `20261005000000_storage_select_policy_for_delete.sql`, which adds
+  > the missing owner SELECT policy with this DELETE policy's exact
+  > predicate. The root cause is the best-supported explanation rather
+  > than a proven one — see `PROJECT.md`, "Reach changes made outside
+  > a feature", for what is established, what is inferred, and the
+  > check that would falsify it.
+  >
+  > **The part worth keeping.** This design asserted a capability from
+  > the text of a policy — "widen the predicate, therefore the owner
+  > can delete orphans" — and nobody exercised it. Had anyone deleted
+  > one photograph and then looked in the bucket, it would have shown
+  > up the same day. It survived three weeks because the public bucket
+  > kept serving every image through an endpoint that never consults
+  > RLS, so the failure had **no visible symptom whatsoever**: the
+  > photo vanished from the app exactly as expected and the file
+  > stayed fetchable forever. A permission change is a claim about
+  > behaviour, and reading SQL is not testing it. `PROJECT.md` Access
+  > control rule 4 now carries this as a standing rule.
+  >
+  > Two things in the bullet above do survive: the permission blocker
+  > was real and is now genuinely removed, and the app still has no
+  > way to *find* an orphan — cleanup is still the Supabase dashboard,
+  > and the README's orphan procedure is the supported route.
+
   Note also that the guest's own attempt to delete the object it just
   uploaded **cannot work and never could** — anon has no DELETE policy
   on `storage.objects`, the call's result is discarded, and it fails

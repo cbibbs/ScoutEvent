@@ -89,10 +89,11 @@ by default.
 
   **The delete path is coupled to the bucket being public, and that
   coupling is load-bearing.** Deletion goes file first, then row, and
-  the row only once the file is confirmed gone — the reverse failure
-  leaves an unfindable but permanently fetchable JPEG, which principle
-  2 makes the worse outcome, while this one leaves a visible broken
-  image a retry finishes. But `remove()` resolves with an empty `data`
+  the row only once the file is confirmed gone. The ordering is the
+  decision: failing the other way round leaves an unfindable but
+  permanently fetchable JPEG, which `CONSTITUTION.md` principle 2
+  makes much the worse outcome, where this way leaves a visible broken
+  image that a retry finishes. But `remove()` resolves with an empty `data`
   and no error both when it deleted nothing *and* when the object was
   already gone, so an unreported path is ambiguous. The app resolves
   that ambiguity by **probing the public endpoint with a cache-busted
@@ -186,6 +187,82 @@ across every feature and should keep holding:
    that never worked for anybody, and nothing caught it because nothing
    tried it.
 
+## Reach changes made outside a feature
+
+`CONSTITUTION.md` principle 2 requires any change to who can reach
+these images, how long they persist, or how easily they can be
+enumerated to be an **explicit recorded decision**. It names a
+feature's `design.md` as the place, which leaves a bug fix with
+nowhere to go — so bug fixes record here. One entry each: what
+widened, what did not, and what it was weighed against. This is not a
+lighter standard, only a different file; a change that needs more
+argument than an entry here needs a feature.
+
+### 2026-10-05 — owner SELECT on `storage.objects` (`20261005000000`)
+
+**What widened.** The owner of an event can now *enumerate* that
+event's folder through the Storage API (`list()`). Before, nobody
+could, because `storage.objects` had no SELECT policy at all.
+
+**What did not.** Nothing becomes newly fetchable. The bucket is
+public-read, so every object was already retrievable by anyone with
+its URL through an endpoint that never consulted RLS — the SELECT
+policy cannot widen a door that was never shut. The predicate is
+character-for-character the existing owner DELETE policy's, so it
+grants no reach that DELETE did not already imply, and it is
+`to authenticated` with an identity match, so `anon` gets nothing and
+Feature 009's anonymous co-approvers are excluded (Access control rule
+2).
+
+**Why it was worth it.** It is what makes deletion work. Without it,
+the only way to remove a photograph from this system did not remove
+the photograph — see the next section. Weighed against principle 2, an
+unreferenced, permanently fetchable image of a young person is the
+worse outcome by a wide margin, and folder enumeration by the person
+who owns the folder is close to the smallest possible price.
+
+**Confidence.** The root cause is the best-supported explanation, not
+a proven one: the production symptom (rows gone, a cache-busted GET of
+each object returning `200`, a never-existent path returning `400`)
+plus the vendor's documented permission list for `remove()` and the
+consistency check that `upload()` — documented as needing only
+`insert` — was unaffected. It has not been reproduced against a live
+Storage service, and less likely causes (an error the old code
+discarded; the DELETE policy's `auth.uid()` branch failing inside the
+Storage request context) were rated unlikely rather than excluded. The
+confirmation is in the migration header: after applying, an owner's
+`remove()` of a real path must return `data` with one entry, not `[]`.
+**If it still returns `[]`, the cause is something else and this entry
+is wrong** — say so here rather than adding a second guess on top.
+
+### Applying `20261005000000` is a release gate
+
+It is not a follow-up. The code shipped in `86f1295` **refuses to
+delete a photo** until the policy exists: it will not remove a row
+whose file it cannot confirm gone, so with the migration unapplied
+deletion fails visibly, with row and file both intact.
+
+That reads as a violation of "Migrations and deploy order" below,
+which says code must never remove capability that existed before it.
+The judgment, recorded here because it is a judgment and not an
+oversight:
+
+- The capability **never existed**. What "delete" did before was
+  destroy the row and leave the image permanently fetchable with
+  nothing left in the app pointing at it — the worst available
+  outcome under principle 2, and worse than refusing.
+- Failing visibly is strictly better than the silent destructive
+  success it replaces, and an organizer who needs a photograph off the
+  screen still has Reject and Remove from slideshow.
+- So the deploy-order rule is satisfied in substance: nothing that
+  worked was taken away.
+
+The window where this is true should still be as near zero as
+possible. **Apply the migration before or with the deploy**, and treat
+"deletion verified working as the owner" as the gate on calling the
+fix shipped. Until that verification happens, the fix is deployed, not
+done.
+
 ## Free-tier limits
 
 Supabase figures **re-checked against the published pricing on
@@ -199,7 +276,7 @@ check whether its conclusion depended on it before reusing it (Feature
 | Limit | Allowance | What happens at the edge |
 |---|---|---|
 | Supabase database | 500MB | Metadata only; storage binds long before this. 1,500 photo rows is under 1MB — not a constraint at any scale this project has |
-| Supabase storage | 1GB | ~1,500-1,800 display copies at the measured 0.3-0.46MB, **shared across every event ever created**. The real capacity constraint. Rejection does not free it, and deleting an event row does not either — rows cascade, storage objects do not (Feature 008 §3) |
+| Supabase storage | 1GB | ~1,500-1,800 display copies at the measured 0.3-0.46MB, **shared across every event ever created**. The real capacity constraint. Rejection does not free it, and deleting an event row does not either — rows cascade, storage objects do not (Feature 008 §3). **Nor did deleting a photograph, until 2026-10-05**: in-app deletion removed the row and left the bytes, so the live project's usage figure includes every photo ever "deleted" through Manage Event. Freeing bytes requires `20261005000000` applied *and* verified; the already-orphaned files are not found by anything in the app and need the README's dashboard procedure |
 | Supabase egress | **5GB/mo** (verified 2026-10-04) | Display objects are served `cache-control: no-cache` with an `ETag` (**measured**, Feature 006 §1b), so a warm client revalidates and gets zero-byte `304`s. Per-client cost is therefore **(distinct photos displayed) × (display-copy size)**, not watch-time × rate — an all-day projector costs about one pass. What that model does *not* make cheap is many *different* clients: 65 viewers × 100-300 distinct photos is 2.6-7.8GB, which is why Feature 008 exists. Three further contributors no spec had costed: the slideshow's unbounded 30s poll, moderation loading full-size copies, and bulk retrieval (Feature 008 §2b). The `no-cache` round trip per slide remains a latency problem (Feature 006 T2.3/T2.4) |
 | Supabase cached egress | **5GB/mo, metered separately** (verified 2026-10-04) | Newly recorded. **Which of the two meters a CDN-served display copy lands on is unknown and is the single most decision-relevant unmeasured fact in the project** — a ~60× swing on the largest egress term, because every slideshow client starts at the same photo and requests the same objects. Feature 008 T2.2 measures it |
 | Supabase realtime | 200 concurrent peak connections; 2M messages/mo | Messages have ~6× headroom at this project's scale (Feature 008 §4). Concurrency is unclear: each slideshow client opens **two** channels over one socket, so 80 viewers is either 85/200 or 170/200 depending on what the meter counts (Feature 008 T0.3). On refusal, clients fall back to the 30s poll — which is the most expensive query in the app, so the failure mode is an egress rise, not an outage |
@@ -241,6 +318,13 @@ So, concretely:
   fails, and should fail toward the pre-existing behavior. `count <
   undefined` is `false`, which silently disables whatever it guards.
 - Prefer migrating first. But do not rely on remembering to.
+
+**One deliberate exception is live now**, and it is the only one:
+until `20261005000000` is applied, photo deletion refuses rather than
+degrading. The argument for it, and why it does not actually take away
+a capability that worked, is in "Reach changes made outside a feature"
+above — read it there rather than re-deriving it, and note that
+applying that migration is a **release gate**, not a follow-up.
 
 ## Framework specifics (Next.js 16)
 
