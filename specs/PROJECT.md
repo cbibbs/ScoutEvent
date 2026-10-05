@@ -71,13 +71,52 @@ by default.
   signed under the same RLS predicate that already governs the `photos`
   rows) and is waiting on the feature that implements it. Treat it as a
   known live exposure, not a design choice.
+
+  Three RLS policies govern `storage.objects` for this bucket, all
+  keyed on the event named by the **first path segment**:
+
+  | Op | Roles | Predicate | Added by |
+  |---|---|---|---|
+  | INSERT | `anon`, `authenticated` | that event row exists | `20260913000000_init.sql` |
+  | DELETE | `authenticated` | `events.organizer_id = auth.uid()` | widened to the folder by `20260921000000` (Feature 007 §3) |
+  | SELECT | `authenticated` | `events.organizer_id = auth.uid()` | `20261005000000` — see "Reach changes made outside a feature" below |
+
+  There is no SELECT policy for `anon` and none is needed, because the
+  bucket is public and **public-endpoint reads never consult RLS at
+  all**. The SELECT policy exists so that *deletion* works; it widens
+  enumeration (an owner can `list()` their own event's folder through
+  the Storage API) and widens nothing about fetching.
+
+  **The delete path is coupled to the bucket being public, and that
+  coupling is load-bearing.** Deletion goes file first, then row, and
+  the row only once the file is confirmed gone — the reverse failure
+  leaves an unfindable but permanently fetchable JPEG, which principle
+  2 makes the worse outcome, while this one leaves a visible broken
+  image a retry finishes. But `remove()` resolves with an empty `data`
+  and no error both when it deleted nothing *and* when the object was
+  already gone, so an unreported path is ambiguous. The app resolves
+  that ambiguity by **probing the public endpoint with a cache-busted
+  request**: only Storage's own `NoSuchKey` answer counts as "absent";
+  a `200` is "present"; anything else — another 4xx, a 5xx, a network
+  failure — is "unknown" and the row is kept.
+
+  That probe works only while the bucket is public, because the public
+  endpoint is the one read path that answers without RLS.
+  **Feature 006's private-bucket flip breaks it**: that endpoint then
+  returns "bucket not found" for every path, so every probe is
+  "unknown", nothing errors, and nothing says why. Deletion fails safe
+  and therefore never completes. The replacement must be an
+  *authenticated* existence check made as the owner that still
+  distinguishes "no such object" from "denied" from "transport
+  failed". Whoever designs that flip must land the replacement in the
+  same change; Feature 006 design §6 now records this as a dependency.
 - **R2**, private (Feature 006): originals at
   `originals/{event_id}/{uuid}.jpg`, reachable only via short-lived
   presigned URLs.
 
 ## Access control
 
-RLS is the enforcement point, not client code. Two rules have held
+RLS is the enforcement point, not client code. These rules have held
 across every feature and should keep holding:
 
 1. **Anonymous writes go through `security definer` functions, never
@@ -101,6 +140,17 @@ across every feature and should keep holding:
    in the app — and `events` stays owner-only, which keeps settings,
    the photo limit, the moderation toggle and Stop uploads out of a
    co-approver's hands by construction rather than by hiding buttons.
+   One addition since Feature 009, and it does not disturb the above:
+   `20261005000000` gave `storage.objects` an owner **SELECT** policy
+   whose predicate is character-for-character the DELETE policy's. It
+   is an **identity match (`organizer_id = auth.uid()`), not a role or
+   membership match**, so an anonymous co-approver session — which
+   carries the `authenticated` role but never an organizer's `uid` —
+   is excluded by construction, exactly as it is from DELETE. Deletion
+   and its prerequisite both stay owner-only. Do not "tidy" this
+   predicate into `can_moderate_event()`: that would hand
+   co-approvers the read half of a power Feature 009 §0a deliberately
+   withheld.
 3. **Image bytes should be governed by the same predicate as the rows
    that point at them.** Decided, not yet true: the `photos` bucket is
    public-read, so today rule 2 governs the row and nothing governs the
@@ -111,6 +161,30 @@ across every feature and should keep holding:
    originals to R2: a store that cannot see `status` cannot enforce the
    predicate, and re-implementing it elsewhere is the mistake Feature
    007's `photo_limit` pre-check already made once.
+4. **A policy on `storage.objects` governs the Storage API, not the
+   public endpoint — and "can write" does not imply "can read back".**
+   Learned expensively on 2026-10-05. The two halves:
+   - **Two doors, one of them unlocked.** Objects in a public bucket
+     are served by a public endpoint that never evaluates RLS. So a
+     `storage.objects` policy decides what the *SDK* can do and says
+     nothing about who can fetch the bytes. A reviewer reading only
+     the policies will conclude the files are protected; they are not.
+     The same split is why a three-week-old bug was invisible: the
+     deletes resolved nothing, and the images kept rendering anyway.
+   - **Storage operations need more grants than their name suggests.**
+     The vendor documents `remove()` as requiring both `delete` *and*
+     `select` on the objects table, and `upload()` of a new file as
+     requiring only `insert`. The project had INSERT and DELETE and no
+     SELECT, which is why uploads worked and deletion did not. Before
+     adding or narrowing a policy here, check the installed SDK's
+     docstring for every operation the app performs — reasoning from
+     the operation's name is what produced this.
+
+   The practical rule: **a claim that an RLS change grants a capability
+   is not evidence that the capability works.** Exercise it against the
+   live project and record that you did. Feature 007 §3 asserted one
+   that never worked for anybody, and nothing caught it because nothing
+   tried it.
 
 ## Free-tier limits
 
