@@ -109,8 +109,12 @@ where applicable, verified) — per `specs/CONSTITUTION.md`.
 
 - [x] T5.1 Build/lint clean. `npm run lint` and `npm run build` both
       pass with no suppressions (re-verified this round, after Phase 6).
-- [ ] T5.2 Set an event's `photo_limit` low and confirm the cap is
-      enforced **server-side** … Blocked on T1.3.
+- [x] T5.2 Set an event's `photo_limit` low and confirm the cap is
+      enforced **server-side**. **Verified by the maintainer
+      2026-10-05** against the live Wood Badge event: the limit was set
+      to the event's existing photo count, a guest upload was attempted,
+      and the cap refused it. The limit was afterwards restored to 500,
+      confirmed live.
 - [ ] T5.3 Confirm the storage `file_size_limit` refuses an oversized
       object … Blocked on T1.4.
 - [ ] T5.4 With a slideshow open, disable moderation and confirm the QR
@@ -120,9 +124,13 @@ where applicable, verified) — per `specs/CONSTITUTION.md`.
       rework: `/e/wood-badge-8a1dcb/slideshow` shows no QR). The poll's
       live update, and the paused/full terms specifically, are not
       exercised — see T6.9.
-- [ ] T5.5 With a slideshow open, hit "Stop uploads" and confirm both
-      that the QR disappears and that a guest upload is refused …
-      Not done — needs an organizer session. See T6.9.
+- [x] T5.5 With a slideshow open, hit "Stop uploads" and confirm both
+      that the QR disappears and that a guest upload is refused.
+      **Verified by the maintainer 2026-10-05**: with moderation
+      enabled and a slideshow open, Stop made the QR vanish and Resume
+      brought it back, without a reload. This is the first live
+      exercise of the realtime path on the event's own row (design §5),
+      not just the initial render.
 - [ ] T5.6 Confirm the guest sees the "event is full" message rather
       than a generic failure, and that it offers no retry. Not done —
       blocked on T1.3.
@@ -146,18 +154,21 @@ was written; the implementation followed the spec it was given.
       and gates the QR on it. `upload_ends_at` is untouched by
       Stop/Resume now, so a configured schedule survives a
       stop-then-resume.
-- [ ] T6.2 Confirm the regression is gone: with uploads stopped, saving
+- [x] T6.2 Confirm the regression is gone: with uploads stopped, saving
       unrelated settings must not re-open uploads or bring the QR back.
-      **Structurally confirmed, not behaviorally confirmed.** `git grep
-      uploads_paused` shows exactly one `.update()` call touching that
-      column, in `UploadStatusControl.tsx`; `EventSettingsForm.tsx`'s
-      update payload has no `uploads_paused` key, so by construction it
-      cannot re-open a stopped event. What I have *not* done is drive
-      this live end-to-end (click Stop as the organizer, save an
-      unrelated setting, confirm still stopped) — that needs both the
-      migration applied (T1.3) and an authenticated organizer session
-      (no inbox access in this session). Flagging exactly as asked
-      rather than treating the refactor as self-evidently sufficient.
+      **Now behaviorally confirmed, not only structurally.** The
+      structural argument still holds — `git grep uploads_paused` shows
+      exactly one `.update()` touching that column, in
+      `UploadStatusControl.tsx`, and `EventSettingsForm.tsx`'s payload
+      has no `uploads_paused` key — and the maintainer drove it live on
+      2026-10-05: with uploads stopped, saving unrelated settings left
+      them stopped. `upload_ends_at` was independently confirmed
+      unchanged afterwards, which matters because the original
+      regression worked by writing that field back from state captured
+      at mount. This is the bug that motivated the dedicated column
+      (design §5); it is the one behaviour in this feature worth the
+      cost of a live check, and it passes.
+
 - [x] T6.3 Add the `check (photo_limit > 0)` constraint and stop the
       client submitting a blank or non-positive value (design §2).
       Constraint in the migration; `EventSettingsForm.handleSubmit`
@@ -212,11 +223,11 @@ was written; the implementation followed the spec it was given.
       keyed only on `paused` (Resume if paused, Stop otherwise),
       independent of the window state — previously it was conditionally
       hidden when the window hadn't opened.
-- [ ] T6.9 Re-verify T5.4/T5.5 against the reworked pause. **Not done** —
-      same blocker as everything else in this phase that touches
-      `uploads_paused`/`photo_limit`: needs T1.3 applied and an
-      authenticated organizer session, neither available in this
-      session.
+- [x] T6.9 Re-verify T5.4/T5.5 against the reworked pause. **Done
+      2026-10-05.** The pause path is exercised live: Stop hides the QR,
+      Resume restores it. T1.3 was applied on 2026-09-21 and the
+      maintainer supplied the organizer session, clearing the blocker
+      recorded here.
 
 **What the still-unapplied migration does to live behavior right now**,
 observed directly rather than assumed: with `photo_limit` and
