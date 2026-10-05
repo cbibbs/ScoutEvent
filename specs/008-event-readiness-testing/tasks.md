@@ -281,22 +281,36 @@ T2.3, T3.1, T3.2, T3.4, T4.1, T4.2.
 
 ## Phase 6 — Event-day readiness (US-31)
 
-- [ ] T6.1 **Re-scoped by Feature 009 (design §13):** co-approvers are
-      admitted by a link and never receive an email, so the number of
-      people signing in on course morning falls from "2-4 reviewers
-      plus the organizer" to **the owner alone**. Test accordingly —
-      one sign-in, timed, plus the day-before operational mitigation
-      which now only has to work for one person. The original task
-      text stands below for anyone running this *before* Feature 009
-      is deployed, when the full staff count still signs in.
-- [ ] T6.1 **Sign-in email at real staff count**, at least two weeks
-      before the course and never on course week (design §12b). Have
-      the actual number of people who will sign in do so within a few
-      minutes. Record how many links arrive and how long they take. If
-      the limit binds, `CONSTITUTION.md` open decision 6 (custom SMTP)
-      reopens with a deadline of 2026-12-18 — and the free operational
-      mitigation (everyone signs in the day before, sessions verified
-      to persist) goes in the run book regardless of the result.
+- [ ] T6.1 **Sign-in email — re-scoped twice, and the second one
+      changes what is being tested** (design §12b, corrected
+      2026-10-05 against the provider's SMTP documentation).
+      The original task — "have the real staff count sign in within a
+      few minutes and count how many links arrive" — **measures
+      nothing**, because without custom SMTP the service refuses to
+      deliver to any address that is not on the project's team. A
+      staff member's link does not arrive slowly; it never arrives,
+      and the app says it did. The limit is also 2/hour, not "a few".
+      Feature 009 removes the need for staff accounts entirely
+      (co-approvers hold a link, not an account), so what remains to
+      test is:
+      1. **The owner's own sign-in**, timed, at least two weeks before
+         the course and never on course week. This is the one account
+         the free tier can serve, and it is now a single point of
+         failure for all authenticated access — record how long the
+         link takes to arrive.
+      2. **One sign-in attempt from a non-team address**, to confirm
+         the refusal and to record exactly what the app displays while
+         nothing is delivered. Run this on the disposable project if
+         it exists (T1.7); it consumes the same 2/hour budget either
+         way.
+      3. The run book line regardless of results: **the owner signs in
+         the day before** and verifies the session persists on the
+         device they will use (T6.4, design §12a).
+
+      If anyone other than the owner turns out to need an account,
+      that is `CONSTITUTION.md` open decision 6 (custom SMTP) and it
+      has dates: decided by 2026-11-20, deployed and tested by
+      2026-12-18. No vendor is chosen; Resend has been mentioned.
 - [ ] T6.2 **Dry run, 2027-01-08 (E−4w)**: real phones, real people, a
       venue-like network, production, the build that will run in
       February. Cover simultaneous guest uploads; reviewers approving
@@ -312,6 +326,13 @@ T2.3, T3.1, T3.2, T3.4, T4.1, T4.2.
       the sign-in-the-day-before step; the upgrade trigger and who
       pulls it; and what to do when the screen goes dark, uploads are
       refused, or a reviewer cannot sign in.
+      **Correction, per design §12b:** "a reviewer cannot sign in" is
+      not a troubleshooting entry, it is the expected state — reviewers
+      have no accounts and never sign in. Replace it with "a reviewer
+      cannot get in" (re-send the approver link; if places are full,
+      raise the number) and keep a separate entry for **the owner**
+      not receiving their link, which has no second account to fall
+      back to and is why the owner signs in the day before.
       **Add, per Feature 009:** reviewer places set to staff count + 2
       before the course; how to hand out and (if needed) replace the
       approver link; and the fact that **only the owner can delete

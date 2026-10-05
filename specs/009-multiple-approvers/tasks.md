@@ -321,9 +321,14 @@ so the next reader can check them rather than as work outstanding.
 Design §14 holds the full table with reasons.
 
 - [x] `specs/CONSTITUTION.md` — open decision 3 struck through as
-      decided; new bounded row for the leaked approver link.
-- [x] `specs/PROJECT.md` — Auth row, "Where the data lives", and
-      access-control rule 2.
+      decided; new bounded row for the leaked approver link
+      (re-weighed now that deletion is owner-only); **open decision 6
+      (custom SMTP) re-based** against the verified team-only delivery
+      restriction, with dates attached if a second account is needed.
+- [x] `specs/PROJECT.md` — Auth row, "Where the data lives",
+      access-control rule 2, and the **auth-email row** (2/hour,
+      team-only delivery, silent from the app, owner as single point
+      of failure for authenticated access).
 - [x] `specs/001-photo-collection-slideshow/requirements.md` — US-6 and
       the out-of-scope line.
 - [x] `specs/003-live-review-and-clear-slideshow-controls/` —

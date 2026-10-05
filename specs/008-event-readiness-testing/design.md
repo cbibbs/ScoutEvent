@@ -658,7 +658,7 @@ Fidelity caveats, stated so they are not discovered later:
 | Environment | Used for | Why |
 |---|---|---|
 | **Disposable project** (second free project, **same region** as production) | 1500-photo seeding, 80-client load runs, the §2c meter experiment, deliberately exceeding a limit, realtime cap probing, moderation timing | Burning *this* project's allowance teaches us the answer at no risk; burning production's does not |
-| **Production** | US-32 functional verification at small scale, the sign-in email rate test, the wake-from-pause rehearsal, the dry run | These are properties *of the production project* and cannot be learned elsewhere |
+| **Production** | US-32 functional verification at small scale, the **owner's** sign-in test (§12b — the team-only refusal half of T6.1 belongs on the disposable project, since it costs the same 2/hour budget), the wake-from-pause rehearsal, the dry run | These are properties *of the production project* and cannot be learned elsewhere |
 
 Two things make this non-optional rather than tidy:
 
@@ -701,7 +701,7 @@ single-client baseline is what T3.3's numbers are compared against.
 | Concurrent review collisions | The capability does not exist | Write the test now, run it when the multi-reviewer feature lands (§5c, T4.3) |
 | The actual venue network | Not ours, and not until February | Throttled profiles (§9d) plus a dry run on real phones at or near the venue (T6.2) |
 | 65 real phones, twice | Nobody has 65 phones | Headless contexts for bytes and concurrency; a handful of real phones in the dry run for everything that is about a phone |
-| The sign-in email rate limit at full staff count, repeatedly | Testing it consumes the same limit it is testing | Test once, ≥2 weeks before the course, at the real staff count (T6.1); never on course week |
+| The sign-in email at full staff count, repeatedly | Testing it consumes the same 2/hour budget it is testing — and, per §12b, staff addresses are refused outright, so the test as originally conceived measures nothing | Test the **owner's** sign-in once, ≥2 weeks before the course, plus one non-team address to confirm the refusal (T6.1); never on course week |
 
 ## 11. The decision gate (US-24)
 
@@ -810,9 +810,10 @@ real event's metadata sitting unbacked is its own small risk).
 
 **Does not buy:** moderation throughput (§5 — the grid path is equally
 broken on both plans); recency at 1500 photographs (§7); the existence
-of bulk download (§8); the sign-in email rate limit (§13b — the
-built-in email service is rate-limited on every plan; the fix is custom
-SMTP, `CONSTITUTION.md` open decision 6); or the unbounded background
+of bulk download (§8); **the sign-in email** (§12b — on every plan the
+built-in service sends at most 2/hour *and only to project team
+members*, so a second organizer cannot be given an account at any
+price; the only fix is custom SMTP, `CONSTITUTION.md` open decision 6); or the unbounded background
 query (§2b-i), which merely stops mattering financially while
 continuing to cost a round trip per slide.
 
@@ -852,35 +853,59 @@ morning. Checklist, with timing:
 
 ### 12b. The sign-in email, which fails silently
 
-`specs/PROJECT.md` records that the magic-link email is rate-limited to
-"a few per hour" and **fails silently** — the app reports "link sent"
-and nothing arrives (`src/app/(site)/login/page.tsx:54`). With 2-4
+`specs/PROJECT.md` recorded that the magic-link email is rate-limited
+to "a few per hour" and **fails silently** — the app reports "link
+sent" and nothing arrives (`src/app/(site)/login/page.tsx:54`). This
+section was written on the assumption that the risk was *volume*: 2-4
 reviewers plus the organizer signing in on the morning of the course,
-this is a live failure on the critical path with no visible cause, and
-it is the one risk on this list that **the plan decision does not
-touch** (§11e).
+with the limit binding somewhere around 3-5 people.
 
-> **Re-scoped by Feature 009 (design §13).** Co-approvers are admitted
-> by a shareable link and never receive an email at all — that is one
-> of the reasons the link design was chosen over invitations (009 §1).
-> The number of people signing in on course morning therefore falls
-> from "2-4 reviewers plus the organizer" to **the owner alone**, which
-> is comfortably inside "a few per hour". The risk shrinks to a single
-> sign-in, and the day-before mitigation below has one person to cover.
-> It is not *gone*: one silently-undelivered link to the one person who
-> owns the event is still an event-morning failure.
+> **Corrected 2026-10-05 against the provider's SMTP documentation.
+> The framing above was wrong in kind, not in degree.** Two facts, both
+> now in `specs/PROJECT.md`:
+>
+> 1. Without custom SMTP, the auth service **refuses to deliver to any
+>    address that is not a member of the project's team.** A
+>    co-organizer therefore **cannot receive a login link at all** —
+>    not slowly, not unreliably, not at all — while the app still says
+>    "link sent".
+> 2. The limit is **2 messages per hour**, not "a few".
+>
+> So the risk is **categorical**: no second person can hold an account
+> on this project as it stands, at any volume, on any plan (§11e —
+> money does not buy this; only custom SMTP does). Everything below
+> that reads as "test how many links arrive" is testing the wrong
+> thing, and the day-before mitigation for *reviewers* was never
+> available, because the reviewers could never have signed in.
+>
+> **What makes the course survivable is Feature 009**, whose
+> co-approvers are admitted by a link and receive no email. The people
+> who must get a working sign-in drop to **the owner alone**, which is
+> the one case the free tier does support (the owner's address is the
+> project team). The residual risk is correspondingly narrow and
+> sharp: *one* person, whose single silently-undelivered link on course
+> morning stops all authenticated access, with no second account
+> possible as a fallback. The owner is a single point of failure for
+> sign-in by construction, not by oversight.
 
-Test (T6.1): have the real number of people who will sign in do so
-within a few minutes, at least two weeks before the course, and record
-how many links arrive and how long they take. Testing it consumes the
-same limit, so **once, and never on course week**.
+Test (T6.1), re-scoped: confirm the **owner's** sign-in works and time
+it, at least two weeks before the course; and confirm the team-only
+restriction by attempting one sign-in from a non-team address and
+recording what the app shows versus what arrives — once, on the
+disposable project if possible, because it costs the same 2/hour
+budget. Never on course week.
 
-If the test shows the limit binds at 3-5 people, that reopens
-`CONSTITUTION.md` open decision 6 (custom SMTP) with a date on it:
-specced and deployed by E−7 weeks, or mitigated operationally by having
-every reviewer sign in **the day before** and verifying their session
-persists. The operational mitigation is free, available immediately,
-and should be in the run book regardless of what the test shows.
+This does not reopen `CONSTITUTION.md` open decision 6 so much as
+**re-base it** (that row is re-stated against these facts). It now
+turns on one question: *does anyone other than the owner need an
+account before the course?* Feature 009 is the reason the answer should
+be no. If it turns out to be yes, custom SMTP is the only route, and
+the dates are the decision by 2026-11-20 (Feature 008's gate, so it
+does not land in December alone) and deployed and tested by E−7 weeks,
+2026-12-18. The free operational mitigations that remain, and belong
+in the run book regardless: the owner signs in **the day before** and
+verifies the session persists; the owner's session on the device they
+will actually use is confirmed at E−1 (§12a).
 
 ### 12c. The dry run
 
@@ -917,7 +942,7 @@ invalidate anything by itself.
 | **`specs/PROJECT.md` free-tier table** | Superseded figures | Updated by this feature |
 | **`CONSTITUTION.md` open decision 4** (retention) | Receives an input, is not resolved (§8d) | — |
 | **`CONSTITUTION.md` open decision 5** (idle pause) | Resolved for the event months *if* the paid plan is taken (§11e) | The gate |
-| **`CONSTITUTION.md` open decision 6** (custom SMTP) | May be reopened with a date by T6.1 (§12b) | T6.1's result |
+| **`CONSTITUTION.md` open decision 6** (custom SMTP) | **Re-based, not reopened** (§12b, corrected 2026-10-05): the default service is team-only, so this is no longer a rate-limit question but "does anyone but the owner need an account". Feature 009 is designed so the answer is no | Decided by 2026-11-20 if the answer is yes; deployed by E−7 |
 
 New dependencies with dates, none of them built here:
 

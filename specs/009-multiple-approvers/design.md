@@ -83,19 +83,38 @@ The organizer chose **a shareable approver link, and the link alone is
 the credential** (US-33): generate it, hand it out at a staff meeting,
 opening it is enough to start reviewing. Rejected with them:
 
-- **Email invitations.** Not a preference — a recorded defect.
-  `specs/PROJECT.md`'s free-tier table says the auth email is limited
-  to "a few per hour" and **fails silently**: the app reports "link
-  sent" and nothing arrives (`src/app/(site)/login/page.tsx:54` shows
-  the success state on any non-error response). Feature 008 §12b calls
-  this a live failure on the critical path with no visible cause and
-  schedules a test (T6.1) for it. Inviting four staff at once on course
-  morning is therefore a plausible *total* failure in which every
-  screen says it worked. A capability whose whole purpose is to add
-  reviewers must not be delivered over the one channel this project
-  knows to be unreliable.
+- **Email invitations.** Not a preference, and no longer even a
+  weighing — **on the free tier this option does not exist.**
+
+  The organizer rejected it because the sign-in email is unreliable:
+  it **fails silently**, with the app reporting "link sent" on a
+  refusal (`src/app/(site)/login/page.tsx:54` shows the success state
+  on any non-error response), so inviting four staff at once on course
+  morning is a plausible *total* failure in which every screen says it
+  worked. Feature 008 §12b calls that a live failure on the critical
+  path with no visible cause.
+
+  **Verified against the provider's SMTP documentation on 2026-10-05,
+  the position is stronger than that and categorical:** without custom
+  SMTP, the auth service *refuses to deliver to any address that is
+  not on the project's team*, and sends at most 2 messages an hour.
+  Wood Badge staff are not project team members. An emailed invitation
+  to them would therefore not have been slow or unreliable — **it
+  would not have arrived at all**, with the app still reporting
+  success. `specs/PROJECT.md`'s auth-email row and
+  `CONSTITUTION.md` open decision 6 are amended with both facts (§14).
+
+  So the link-only design is not a workaround for a flaky channel; it
+  is **the only way to add a reviewer that does not require a new
+  vendor** (custom SMTP, which is an open decision with its own cost
+  and its own deadline, not something to take on inside this feature).
+  That moves it from convenient to correct, and it is worth recording
+  in those terms so nobody later "improves" it by adding invitations.
 - **Requiring sign-in after the link.** Reintroduces the same email
-  path, one step later.
+  path, one step later — and under the team-only restriction it does
+  not merely reintroduce a risk, it reintroduces a wall: the staff
+  member's address is refused, so the link would lead to a sign-in
+  that cannot complete.
 - **Single-use-per-device.** Would mean marking devices, which is the
   per-device tracking identifier Feature 007 design §1 refused for
   guests, for the same reasons.
@@ -1006,10 +1025,10 @@ If the code lands first:
   and it must not take the manage page down with it — the page is where
   Stop uploads lives (Feature 007 US-23), and losing that to a missing
   table would be precisely Feature 007's bug again.
-- The dashboard's "Shared with you" query fails the same way. Treat a
-  failed membership query as **"no shared events"**, never as "not an
-  owner": the owner's own list comes from its own query and must render
-  regardless.
+- The approver session's shared-events query fails the same way. Treat
+  a failed membership query as **"no shared events"**, never as "not an
+  owner": an account session's own list comes from its own query (§5)
+  and must render regardless.
 - The manage/review guards are `owner || approver`. With the table
   absent, `approver` must evaluate false on error, leaving the owner
   guard exactly as it is today. State the direction of failure
@@ -1064,13 +1083,20 @@ than 12-18. It also does not depend on the gate's outcome in either
 direction: nothing here moves bytes.
 
 One interaction worth recording in the other direction: **this feature
-reduces the risk Feature 008 §12b is about.** The silent sign-in-email
-failure was sized at "2-4 reviewers plus the organizer signing in on
-the morning of the course". Co-approvers never receive an email, so
-that number drops to the owner alone. Feature 008's T6.1 should be
-re-scoped accordingly (§14) — it becomes a much smaller test of a much
-smaller risk, and the operational mitigation (everyone signs in the day
-before) now only has to work for one person.
+is what keeps Feature 008 §12b survivable.** That risk was sized as a
+rate limit — "2-4 reviewers plus the organizer signing in on the
+morning of the course" — and the documented position (verified
+2026-10-05) is categorical instead: the default mail service delivers
+only to project team members, so **the reviewers could never have
+signed in at all**, and the day-before mitigation Feature 008 proposes
+for them was never available. Co-approvers are admitted by a link and
+receive no email, so the number of people who must get a working
+sign-in drops to the owner alone, which is the one case the free tier
+does support. Feature 008 §12b and T6.1 are re-scoped accordingly
+(§14), and `CONSTITUTION.md` decision 6 is re-stated against the
+team-only restriction rather than the rate limit: it now turns on
+whether anyone other than the owner needs an *account* before the
+course, which this feature is specifically designed to avoid.
 
 ## 14. Amendments this feature makes
 
@@ -1094,7 +1120,8 @@ behaviour must amend that earlier spec. All of the following are
 | `specs/007` US-22 / US-23 | The actor is the **owner**, explicitly, now that "organizer" is ambiguous |
 | `specs/008` T-0 | Closed: E = 2027-02-05 confirmed |
 | `specs/008` §5c / T4.3 | The four-step concurrency test is absorbed as a task in this feature's `tasks.md` (T6.3) |
-| `specs/008` §12b / T6.1 | Re-scoped: co-approvers do not use the sign-in email, so the test is the owner alone (§13) |
+| `specs/008` §12b / T6.1 | Re-scoped: the risk is **categorical, not a rate limit** — the default mail service delivers only to project team members, so a co-organizer address is refused outright. Co-approvers do not use email at all, so the test is the owner alone (§13) |
+| `specs/PROJECT.md` — auth email row, `CONSTITUTION.md` decision 6 | Both re-stated against the verified facts: 2 messages/hour, **team-only delivery**, silent from the app; templates do not require custom SMTP; the owner is a single point of failure for authenticated access |
 | `specs/008` §3, §8c, T6.4, T7.2 | Deletion and retention cleanup are **owner-only work**. The storage arithmetic is unchanged (it already assumed rejection frees nothing), but the assumption that more reviewers means more hands for the deletion step is removed, and the pre-downgrade deletion in T7.3 is the owner's alone (§0a) |
 
 Deliberately **not** amended: Feature 007 US-21 and Feature 005 US-17

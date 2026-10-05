@@ -305,10 +305,12 @@ worsens nor closes that.
 - Per-approver revocation, and anything that identifies one admitted
   person to withdraw them individually. Withdrawal is all-or-nothing by
   design (US-38); at 2-4 people, re-admitting everybody costs a minute.
-- Inviting co-approvers by email. See `design.md` §1 — the project's
-  own records show sign-in email is rate-limited and fails silently,
-  which makes "invite four staff at once on course morning" a plausible
-  total failure with nothing shown to anyone.
+- Inviting co-approvers by email. See `design.md` §1: not merely
+  unreliable — **on the service this project uses, a message to anyone
+  who is not already part of the project's team is refused outright,
+  and the app reports success anyway.** Inviting staff by email could
+  not have worked at all, so this is the option being ruled out for
+  being impossible, not for being awkward.
 - Any further role between co-approver and owner. One extra power set,
   not a permissions system.
 - Transferring ownership of an event.
