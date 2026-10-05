@@ -8,19 +8,23 @@
 -- Why this is needed
 -- ------------------
 -- storage.objects has an INSERT policy and a DELETE policy but, until
--- now, no SELECT policy at all. Storage's `remove()` is not a bare
--- `DELETE FROM storage.objects WHERE id = ...`: it filters on bucket and
--- name and returns what it deleted. Postgres applies the SELECT
--- policies to any DELETE that reads existing rows through a WHERE on
--- columns or a RETURNING clause (reproduced against a local Postgres 16
--- with this project's exact DELETE policy: `DELETE 0`, no error), so with
--- no SELECT policy the owner's DELETE policy matches zero rows. Zero
--- rows is not an error: `remove()`
+-- now, no SELECT policy at all. What is established:
+--   * The supabase-js documentation for `remove()` lists the permissions it
+--     needs on the objects table as both `delete` and `select`.
+--   * Before this migration there was no SELECT policy, so the owner had
+--     only `delete`.
+--   * Guest uploads are unaffected: `upload()` of a new file documents only
+--     `insert`, and this migration touches nothing about that.
+-- What is believed, not proven: that Storage's delete reads the rows it
+-- removes (it reports back what it deleted), that reading them is subject
+-- to the SELECT policies, and that with none the owner's DELETE policy
+-- therefore matches zero rows. Zero rows is not an error: `remove()`
 -- resolves with `{ data: [], error: null }`, the application sees
--- "success", and the file stays. Images kept displaying because the
--- bucket is public and public reads bypass RLS, which is why nobody saw
--- it. The supabase-js `remove()` documentation says as much:
--- "objects table permissions: delete and select".
+-- "success", and the file stays. That is the best-supported explanation for
+-- the symptom (photo rows deleted, files left behind), not a demonstrated
+-- mechanism; it has not been reproduced against a live Storage service.
+-- Images kept displaying because the bucket is public and public reads
+-- bypass RLS, which is why nobody saw it.
 --
 -- What this adds, and what it deliberately does not
 -- -------------------------------------------------
@@ -46,7 +50,10 @@
 -- After applying, verify as the owner (signed in, browser console or a
 -- throwaway script): `supabase.storage.from('photos').remove([path])`
 -- should resolve with `data` containing one entry for that path, not `[]`.
--- The app now refuses to delete the photo row unless it sees that.
+-- That check is what confirms the explanation above; if `data` is still
+-- `[]` for a file that exists, the cause is something else. The app only
+-- deletes the photo row after it has seen the file go (or confirmed it is
+-- already gone).
 
 drop policy if exists "organizers read their event photo files" on storage.objects;
 create policy "organizers read their event photo files"

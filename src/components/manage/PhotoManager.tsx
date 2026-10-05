@@ -11,7 +11,11 @@ import {
   POLL_FALLBACK_MS,
   SLIDESHOW_PAGE_SIZE,
 } from "./constants";
-import { deletePhotos, summarizeFailures } from "./deletePhotos";
+import {
+  deletePhotos,
+  summarizeFailures,
+  type DeleteFailure,
+} from "./deletePhotos";
 import {
   defaultLibraryFilters,
   matchesLibrary,
@@ -361,7 +365,10 @@ export function PhotoManager({
 
   // Shared by single and bulk delete. Storage first, then the row, and the
   // row only for photos whose file is confirmed gone — see deletePhotos.
-  async function runDelete(photos: Photo[], describe: (deleted: number) => string) {
+  async function runDelete(
+    photos: Photo[],
+    describe: (deleted: number, failures: DeleteFailure[]) => string,
+  ) {
     setDeleteNotice(null);
     setBusyIds((prev) => new Set([...prev, ...photos.map((p) => p.id)]));
     try {
@@ -369,7 +376,7 @@ export function PhotoManager({
       if (deletedIds.size > 0) reconcileAfterDelete(deletedIds);
       if (failures.length > 0) {
         setDeleteNotice({
-          summary: describe(deletedIds.size),
+          summary: describe(deletedIds.size, failures),
           reasons: summarizeFailures(failures),
         });
       }
@@ -389,7 +396,14 @@ export function PhotoManager({
 
   async function deleteOne(photo: Photo) {
     if (!confirm("Delete this photo permanently?")) return;
-    await runDelete([photo], () => "This photo could not be deleted.");
+    // The headline must match what actually happened: when only the record
+    // failed, the file *was* deleted and "could not be deleted" would
+    // contradict the reason shown beneath it.
+    await runDelete([photo], (_deleted, failures) =>
+      failures.some((f) => f.fileDeleted)
+        ? "This photo's file was deleted, but its record could not be removed."
+        : "This photo was not deleted.",
+    );
   }
 
   async function bulkPatch(ids: Set<string>, patch: Partial<Photo>) {

@@ -9,8 +9,23 @@ type Supabase = ReturnType<typeof createClient>;
 // 30 round trips rather than 1500.
 const CHUNK_SIZE = 50;
 const PROBE_CONCURRENCY = 8;
+// Consecutive probes that come back "unknown" before the run gives up. A
+// handful of unknowns is a flaky request; this many in a row is Storage down,
+// the network gone, or the probe no longer matching the bucket (see the note
+// on probeObject) — and without a limit a 600-photo run is ~1200 doomed
+// round trips with the UI stuck on "Deleting…".
+const MAX_CONSECUTIVE_UNKNOWN = 5;
 
-export type DeleteFailure = { id: string; reason: string };
+export type DeleteFailure = {
+  id: string;
+  reason: string;
+  /**
+   * True when this photo's file is known to be gone but its row survives, so
+   * it now renders as a broken image. False when the photo was left exactly
+   * as it was. Lets the caller word a headline that matches the outcome.
+   */
+  fileDeleted: boolean;
+};
 
 export type DeleteResult = {
   /** Photos whose file is confirmed gone AND whose row is confirmed gone. */
@@ -22,12 +37,20 @@ export type DeleteResult = {
 // Reasons are shown to the organizer verbatim and grouped by identical text,
 // so the same cause across 300 photos reads as one line with a count.
 export const REASON_REFUSED =
-  "Storage did not delete the file, so the photo was kept (nothing was changed). " +
-  "This usually means the storage delete permission is missing — apply the latest " +
-  "migration, supabase/migrations/20261005000000_storage_select_policy_for_delete.sql.";
+  "Storage refused to delete this photo's file, so the photo was left exactly as it was. " +
+  "Nothing was lost or changed. This is a setup problem that only the site maintainer " +
+  "can fix, so please tell them. In the meantime, Reject or Remove from slideshow will " +
+  "still take the photo off the screen.";
+// Diagnostic detail for whoever maintains the deployment. Shown in the console,
+// not to the organizer, who can do nothing with a migration filename.
+const REFUSED_DIAGNOSTIC =
+  "[deletePhotos] Storage returned no error but did not delete a file that still " +
+  "exists. The storage.objects SELECT policy for owners is probably missing: apply " +
+  "supabase/migrations/20261005000000_storage_select_policy_for_delete.sql.";
 export const REASON_UNCONFIRMED =
   "Storage did not confirm the file was deleted and its state could not be checked, " +
-  "so the photo was kept. Try again.";
+  "so the photo was kept. Try again; if it keeps happening, Storage may be " +
+  "unreachable, so try again later.";
 export const REASON_ROW_FAILED =
   "The file was deleted but the photo record could not be removed, so this photo now " +
   "shows as a broken image. Delete it again to finish.";
@@ -36,6 +59,27 @@ export const REASON_NOT_ATTEMPTED =
 
 type ProbeResult = "present" | "absent" | "unknown";
 
+// !!! COUPLED TO THE BUCKET BEING PUBLIC — REWRITE THIS WHEN FEATURE 006 !!!
+// !!! MAKES THE `photos` BUCKET PRIVATE.                                 !!!
+//
+// This probe reads `getPublicUrl()` and the public endpoint. Once the bucket
+// is private that endpoint no longer answers "does this object exist": it
+// returns "Bucket not found" for every path, so every probe comes back
+// "unknown". Nothing will error and nothing will say why. The effect is:
+//   * Photos `remove()` reports deleting still delete (the probe is skipped).
+//   * Anything `remove()` does NOT report — an already-gone file, OR a file
+//     RLS hid from the caller — can never be confirmed, so its row is never
+//     deleted. If `remove()` can return an empty `data` on a genuine success
+//     (the vendor's own docstring shows such an example response), deletion
+//     becomes permanently inoperative: it fails safe, but never completes.
+//   * The circuit breaker below trips, and the organizer sees "could not be
+//     checked, try again" — which will be wrong, because retrying cannot help.
+// The replacement must be an *authenticated* existence check made as the
+// owner (e.g. a signed URL, or the SDK's authenticated exists/info call —
+// check the installed storage-js version), and it must still tell "no such
+// object" apart from "denied" and from a transport failure. The README's
+// "delete it again" advice for broken-image photos depends on this too.
+//
 // Asks the public endpoint — which never consults RLS — whether an object
 // really exists. This exists because `remove()` cannot tell "already gone"
 // from "hidden from you by RLS": both come back as an empty list with no
@@ -68,15 +112,19 @@ async function probeObject(supabase: Supabase, path: string): Promise<ProbeResul
   }
 }
 
+// Runs `fn` over `items` with bounded concurrency. Once `shouldStop()` is true
+// no further items are started (those already in flight finish); skipped items
+// are left `undefined` in the result.
 async function mapWithConcurrency<T, R>(
   items: T[],
   limit: number,
   fn: (item: T) => Promise<R>,
-): Promise<R[]> {
-  const results = new Array<R>(items.length);
+  shouldStop: () => boolean = () => false,
+): Promise<(R | undefined)[]> {
+  const results = new Array<R | undefined>(items.length).fill(undefined);
   let next = 0;
   async function worker() {
-    while (next < items.length) {
+    while (next < items.length && !shouldStop()) {
       const i = next++;
       results[i] = await fn(items[i]);
     }
@@ -107,9 +155,11 @@ export async function deletePhotos(
 ): Promise<DeleteResult> {
   const deletedIds = new Set<string>();
   const failures: DeleteFailure[] = [];
-  const fail = (batch: Photo[], reason: string) => {
-    for (const p of batch) failures.push({ id: p.id, reason });
+  const fail = (batch: Photo[], reason: string, fileDeleted = false) => {
+    for (const p of batch) failures.push({ id: p.id, reason, fileDeleted });
   };
+  let consecutiveUnknown = 0;
+  const breakerTripped = () => consecutiveUnknown >= MAX_CONSECUTIVE_UNKNOWN;
 
   for (let start = 0; start < photos.length; start += CHUNK_SIZE) {
     const chunk = photos.slice(start, start + CHUNK_SIZE);
@@ -143,17 +193,28 @@ export async function deletePhotos(
 
     let sawRefusal = false;
     if (unreported.length > 0) {
-      const probes = await mapWithConcurrency(unreported, PROBE_CONCURRENCY, (p) =>
-        probeObject(supabase, p.storage_path),
+      const probes = await mapWithConcurrency(
+        unreported,
+        PROBE_CONCURRENCY,
+        async (p) => {
+          const result = await probeObject(supabase, p.storage_path);
+          consecutiveUnknown = result === "unknown" ? consecutiveUnknown + 1 : 0;
+          return result;
+        },
+        breakerTripped,
       );
       unreported.forEach((p, i) => {
-        if (probes[i] === "absent") {
+        const probe = probes[i];
+        if (probe === "absent") {
           confirmed.push(p); // already gone — finish the job on the row
-        } else if (probes[i] === "present") {
+        } else if (probe === "present") {
           sawRefusal = true;
-          failures.push({ id: p.id, reason: REASON_REFUSED });
+          failures.push({ id: p.id, reason: REASON_REFUSED, fileDeleted: false });
         } else {
-          failures.push({ id: p.id, reason: REASON_UNCONFIRMED });
+          // "unknown", or never probed because the breaker tripped mid-chunk.
+          // remove() was already called for these, so "not attempted" would
+          // be untrue; their state is simply unconfirmed.
+          failures.push({ id: p.id, reason: REASON_UNCONFIRMED, fileDeleted: false });
         }
       });
     }
@@ -169,12 +230,35 @@ export async function deletePhotos(
         )
         .select("id");
       if (rowError) {
-        fail(confirmed, `${REASON_ROW_FAILED} (${rowError.message})`);
+        fail(confirmed, `${REASON_ROW_FAILED} (${rowError.message})`, true);
       } else {
         const removed = new Set((gone ?? []).map((r) => r.id));
+        const unmatched: Photo[] = [];
         for (const p of confirmed) {
           if (removed.has(p.id)) deletedIds.add(p.id);
-          else failures.push({ id: p.id, reason: REASON_ROW_FAILED });
+          else unmatched.push(p);
+        }
+
+        // A DELETE that matches nothing is ambiguous: the row may already be
+        // gone (another tab, a double-click before the realtime echo) or the
+        // DELETE may have been blocked. Ask which.
+        if (unmatched.length > 0) {
+          const { data: still, error: checkError } = await supabase
+            .from("photos")
+            .select("id")
+            .in(
+              "id",
+              unmatched.map((p) => p.id),
+            );
+          if (checkError) {
+            fail(unmatched, `${REASON_ROW_FAILED} (${checkError.message})`, true);
+          } else {
+            const present = new Set((still ?? []).map((r) => r.id));
+            for (const p of unmatched) {
+              if (present.has(p.id)) fail([p], REASON_ROW_FAILED, true);
+              else deletedIds.add(p.id); // already gone: that is a success
+            }
+          }
         }
       }
     }
@@ -183,6 +267,18 @@ export async function deletePhotos(
     // permissions problem — it will recur on every remaining chunk, so
     // stop instead of probing and failing thousands more.
     if (sawRefusal) {
+      console.warn(REFUSED_DIAGNOSTIC);
+      fail(photos.slice(start + CHUNK_SIZE), REASON_NOT_ATTEMPTED);
+      break;
+    }
+
+    // Likewise a run of probes that cannot tell us anything is systematic.
+    if (breakerTripped()) {
+      console.warn(
+        `[deletePhotos] ${MAX_CONSECUTIVE_UNKNOWN} consecutive existence probes were ` +
+          "inconclusive; stopping. Storage may be down, or the probe no longer " +
+          "matches the bucket (see the note on probeObject).",
+      );
       fail(photos.slice(start + CHUNK_SIZE), REASON_NOT_ATTEMPTED);
       break;
     }

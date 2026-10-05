@@ -114,9 +114,13 @@ change.
 An *orphan* is a file in the `photos` bucket with no `photos` row. They
 come from photo deletions made before
 `20261005000000_storage_select_policy_for_delete.sql` (which left the file
-behind), and from guest uploads Storage accepted but `submit_photo()`
-then refused. The app has no screen for them — the fix stops new ones, it
-does not find old ones. Orphans are still publicly fetchable by URL, so
+behind), from guest uploads Storage accepted but `submit_photo()`
+then refused, and from **deleting an event**: the storage DELETE policy
+requires the event to still exist, so files under a deleted event can
+never be removed through the app, only from the dashboard. (The step 1
+query finds these too: their `photos` rows are gone with the event.)
+The app has no screen for them — the fix stops new ones, it does not find
+old ones. Orphans are still publicly fetchable by URL, so
 clear them.
 
 1. **Find them.** In **SQL Editor** (runs as `postgres`, so RLS does not
@@ -140,7 +144,9 @@ clear them.
 
 3. **Check it worked**: a cache-busted request for the file should now be
    `400` (not `200`) —
-   `curl -sI "$NEXT_PUBLIC_SUPABASE_URL/storage/v1/object/public/photos/<name>?x=$RANDOM"`.
+   `curl -sI "<your NEXT_PUBLIC_SUPABASE_URL>/storage/v1/object/public/photos/<name>?x=$RANDOM"`
+   (substitute the value from `.env.local`; it is not set in a plain shell
+   unless you export it).
 
 The opposite problem — a `photos` row whose file is missing (shown as a
 broken image) — is found with:
@@ -154,8 +160,14 @@ where not exists (
 );
 ```
 
-Deleting such a photo again from Manage Event finishes the job; the app
-recognises that its file is already gone.
+While the bucket is public, deleting such a photo again from Manage Event
+finishes the job: the app asks the public endpoint, sees the file is
+already gone, and removes the record. This depends on the bucket being
+public. Once Feature 006 makes it private that check stops working, and a
+broken-image photo will report that its state could not be confirmed; at
+that point delete the row from the SQL Editor instead. (Deleting a photo
+that another tab already deleted is not this case; the app now recognises
+it and reports it as deleted.)
 
 ## Project structure
 
