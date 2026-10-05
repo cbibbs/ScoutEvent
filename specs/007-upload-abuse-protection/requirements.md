@@ -90,7 +90,11 @@ the storage every other event depends on.
 > event — and now does so explicitly, because an event may also have
 > co-approvers. Stopping and resuming uploads, raising the photo
 > limit, and every other event setting stay owner-only; a co-approver
-> may act on photographs and nothing else. Feature 009 §0 records the
+> may make moderation decisions on photographs (approve, reject,
+> restore, slideshow membership) and nothing else — **deleting
+> photographs is also owner-only** (Feature 009 §0a), so the
+> bulk-delete remedy this feature names for an event that has filled
+> up is work only the owner can do. Feature 009 §0 records the
 > accepted cost: if the owner is off-site and uploads must stop,
 > nobody else can stop them. Feature 009 US-34 requires co-approvers to
 > *see* the upload state so they can tell the owner, which is the only

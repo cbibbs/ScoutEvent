@@ -129,13 +129,16 @@ can curate the collection and remove anything unwanted.
   for those events; organizers SHALL NOT see other organizers' events.
   **Amended by Feature 009 (US-34, US-35).** An owner may now admit
   **co-approvers** to one event through a shareable approver link. A
-  co-approver sees that event's photographs and may act on them —
-  approve, reject, restore, curate the slideshow, delete — and sees
-  **nothing else**: not the owner's other events, not their existence
-  or count. The second half of this criterion therefore still holds in
-  full; the first is narrowed to "only the events they own or hold a
-  place on". Changing an event — its settings, photo limit, moderation
-  toggle, upload pause, or existence — remains the owner's alone.
+  co-approver sees that event's photographs and may make moderation
+  decisions on them — approve, reject, restore, add to and remove from
+  the slideshow — and sees **nothing else**: not the owner's other
+  events, not their existence or count. The second half of this
+  criterion therefore still holds in full; the first is narrowed to
+  "only the events they own or hold a place on". Two powers stay the
+  owner's alone: **deleting a photograph and its file** (the criterion
+  above about deletion is unchanged and is an owner action), and
+  changing an event — its settings, photo limit, moderation toggle,
+  upload pause, or existence.
 
 ### US-7: Cost and operational safety
 

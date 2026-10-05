@@ -312,6 +312,12 @@ T2.3, T3.1, T3.2, T3.4, T4.1, T4.2.
       the sign-in-the-day-before step; the upgrade trigger and who
       pulls it; and what to do when the screen goes dark, uploads are
       refused, or a reviewer cannot sign in.
+      **Add, per Feature 009:** reviewer places set to staff count + 2
+      before the course; how to hand out and (if needed) replace the
+      approver link; and the fact that **only the owner can delete
+      photographs or stop uploads** — if the event fills up mid-course,
+      raising `photo_limit` and clearing junk are both owner actions
+      and no reviewer can do either (Feature 009 §0a).
 - [ ] T6.5 **E−7 days (2027-01-29)**: wake the project; confirm the
       guest page, slideshow and sign-in all serve.
 - [ ] T6.6 **E−1 day (2027-02-04)**: confirm still awake; full
@@ -329,7 +335,11 @@ T2.3, T3.1, T3.2, T3.4, T4.1, T4.2.
       meter — this is the first real measurement of design §8b and
       belongs back in `specs/PROJECT.md`.
 - [ ] T7.2 At the end of the retention window: delete photographs
-      (**objects and rows**), then the event — in that order. Deleting
+      (**objects and rows**), then the event — in that order.
+      **Owner-only work** (Feature 009 §0a): co-approvers cannot delete,
+      so this cannot be shared out and should be scheduled as one
+      person's task rather than assumed to be covered by "the reviewers
+      are still around". T7.3's downgrade depends on it completing. Deleting
       the event first orphans ~1800 JPEGs in the bucket forever with no
       row left to find them by (design §3, §8c). If select-all still
       does not exist, the Storage dashboard's folder delete is the

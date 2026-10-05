@@ -228,7 +228,14 @@ over a realistic sample, T2.1) and three operational consequences:
    clean refusal into a storage exhaustion that breaks uploads for
    every event on the project.
 2. **Rejection does not free storage**, and neither does deleting the
-   event row. `photos` rows cascade on event delete
+   event row. **Amended by Feature 009 §0a:** co-approvers can reject
+   but **cannot delete**, so every rejected or junk photograph sits in
+   the bucket until the *owner* clears it. The arithmetic above is
+   unchanged — it already assumed rejection frees nothing — but the
+   hands are not: adding 2-4 reviewers adds no capacity to the
+   deletion step, which stays one person's job, before the course
+   (raising `photo_limit`), during it (if the cap is reached) and
+   after it (§8c). `photos` rows cascade on event delete
    (`20260913000000_init.sql:26`); storage objects do not. Deleting the
    event at the end of the retention window would orphan ~1800 JPEGs in
    the bucket with no row left to find them by, permanently consuming
@@ -565,6 +572,16 @@ Two consequences for the timeline:
    and the §3 note about not enabling Sharp still stands independently.
 
 ### 8c. Deletion has to be possible
+
+> **Amended by Feature 009 §0a.** Deletion is **owner-only** — a
+> co-approver may not delete a photograph or its object. So nothing in
+> this step can be shared out among the course's reviewers: the 63
+> Library pages below are 63 pages for one person, and the
+> pre-downgrade deletion in §11e / T7.3 that the bill depends on is
+> that same person's job. This makes §5b's "select all matching the
+> current filter" worth more than it was when three problems shared
+> one fix: it is now the only thing that makes the retention step
+> tractable for a single pair of hands.
 
 Per §3(2) and §5b: deleting 1500 photographs today means 63 Library
 pages at 24 each with no select-all, and deleting the event row frees

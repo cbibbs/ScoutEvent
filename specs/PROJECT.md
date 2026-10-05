@@ -90,13 +90,17 @@ across every feature and should keep holding:
    alone, and every policy spelled out `organizer_id = auth.uid()` in
    nine places. It is now one predicate — `can_moderate_event(event_id)`
    — meaning *the owner, or someone holding a place on that event's
-   approver link*, and every photo and storage policy calls it rather
-   than restating it. Organizer-facing queries still rely on the
-   policy rather than filtering in the client. Note what did **not**
-   move: `events` itself stays owner-only, which is what keeps
-   settings, the photo limit, the moderation toggle and Stop uploads
-   out of a co-approver's hands by construction rather than by hiding
-   buttons (Feature 009 §0, §4).
+   approver link*. It gates reading and **moderating** a photograph:
+   the `photos` SELECT and UPDATE policies call it rather than
+   restating the predicate. Organizer-facing queries still rely on the
+   policy rather than filtering in the client. Two things did **not**
+   move, and both are deliberate (Feature 009 §0a, §4):
+   **deletion stays owner-only** — the `photos` DELETE and
+   `storage.objects` DELETE policies are untouched and know nothing
+   about membership, because deletion is the only irreversible action
+   in the app — and `events` stays owner-only, which keeps settings,
+   the photo limit, the moderation toggle and Stop uploads out of a
+   co-approver's hands by construction rather than by hiding buttons.
 3. **Image bytes should be governed by the same predicate as the rows
    that point at them.** Decided, not yet true: the `photos` bucket is
    public-read, so today rule 2 governs the row and nothing governs the

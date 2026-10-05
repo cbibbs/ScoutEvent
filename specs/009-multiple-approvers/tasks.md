@@ -137,15 +137,22 @@ after it (design §4).
 - [ ] T2.5 `rotate_approver_link`, `approver_link_preview`,
       `claim_approver_place` — the last with
       `select … for update` on the link row, which is what actually
-      enforces the place cap against simultaneous claims (US-38).
+      enforces the place cap against simultaneous claims (US-38), and
+      with a refusal for any caller whose session is **not** anonymous,
+      which is what makes "an approver sees only shared events" a total
+      rule rather than a filter (design §5a, guard 2).
       Grants: preview to `anon, authenticated`; claim and rotate to
       `authenticated`. Design §2a.
-- [ ] T2.6 Recreate the five live predicates as membership-based:
-      `photos` SELECT (supersedes `20260914000000:19`), `photos`
-      UPDATE using + with check (`20260913000000:79,85`), `photos`
-      DELETE (`:96`), `storage.objects` DELETE (supersedes
-      `20260921000000:171`, keeping the `e.id::text = foldername[1]`
-      comparison rather than a cast that would error). Design §4.
+- [ ] T2.6 Recreate the **three** live predicates that change, as
+      membership-based: `photos` SELECT (supersedes
+      `20260914000000:19`) and `photos` UPDATE using + with check
+      (`20260913000000:79,85`). Design §4.
+      **Leave both DELETE policies exactly as they are** — `photos`
+      DELETE (`20260913000000:96`) and `storage.objects` DELETE
+      (`20260921000000:171`) stay owner-only, because deletion is not a
+      co-approver power (design §0a). Do not thread
+      `can_moderate_event` through them "for consistency"; their being
+      untouched *is* the enforcement.
 - [ ] T2.7 Apply to the live project and verify **as the owner, before
       any approver exists**, that nothing changed: review, approve,
       reject, slideshow toggle, delete, bulk actions, and a storage
@@ -172,6 +179,15 @@ after it (design §4).
       rotated / deleted / never existed), places full, **anonymous
       sign-in disabled** (says it is a site configuration problem),
       rate-limited (retryable, says to wait). Design §3.
+- [ ] T3.3a **An account session is refused without being disturbed**
+      (design §5b): no sign-out, no place taken, and one of two
+      messages — "this is your event, here is how to manage it" if the
+      account owns it, otherwise an explanation naming the private
+      window as the way to help. Verify by opening an approver link
+      while signed in as the owner **and** as a different organizer,
+      and confirm the signed-in dashboard is intact afterwards in both
+      cases. This is the one path that could sign someone out of their
+      own events at a campsite.
 - [ ] T3.4 Re-opening a current link while already holding a place
       returns to the event and consumes nothing (US-33).
 - [ ] T3.5 Confirm the proxy (`src/proxy.ts`) treats an anonymous
@@ -198,29 +214,42 @@ after it (design §4).
 
 ## Phase 5 — What a co-approver sees
 
-- [ ] T5.1 `/dashboard`: two labelled sections, "Your events" and
-      "Shared with you", each omitted when empty; a failed membership
-      query degrades to "no shared events" and never suppresses the
-      owned list. Design §5, §12 (US-35).
+- [ ] T5.1 `/dashboard`: **one list, chosen by session type** — an
+      account session lists the events it owns (today's query,
+      unchanged); an anonymous approver session lists only the events
+      it holds places on. Do not run both and merge. A failed
+      membership query degrades to an empty shared list and must never
+      suppress or alter the owned list. Design §5, §5a, §12 (US-35).
+- [ ] T5.1a The site header (`src/components/Header.tsx`) must not
+      offer "Organizer sign in" to an approver session, and signing out
+      must read as leaving review. A co-approver who signs in with an
+      email in the same browser **loses their place and cannot
+      re-claim it** (design §5b); the cheapest defence is not putting
+      the trapdoor in front of them.
 - [ ] T5.2 Manage and review page guards become owner-or-approver, with
       the approver check failing *false* on error so the owner path is
       untouched when the migration is absent. A visitor who is neither
       gets `notFound()`, the same response as a missing event (US-35).
 - [ ] T5.3 Role-aware rendering per design §5's table: settings form,
-      Stop/Resume, delete event and the approver panel are **omitted**
-      (not disabled) for co-approvers; upload state and the photo count
-      render read-only; guest and slideshow links stay visible.
-      Design §5 (US-34).
+      Stop/Resume, **every delete control** (per-card Delete, "Delete
+      selected" in the Library bulk toolbar, delete event) and the
+      approver panel are **omitted** (not disabled) for co-approvers;
+      upload state and the photo count render read-only; guest and
+      slideshow links stay visible. Design §5, §0a (US-34).
 - [ ] T5.4 Confirm the refusals are real, not cosmetic: as a
-      co-approver, attempt an `events` update and an approver-link read
-      directly from the browser console and confirm Postgres refuses
-      both. US-34's last clause. Design §4.
+      co-approver, attempt from the browser console an `events` update,
+      an approver-link read, a `photos` **delete**, and a
+      `storage.objects` **delete** of one of that event's objects.
+      Confirm Postgres refuses all four, and in particular that the
+      photo row and the object both still exist afterwards. US-34's
+      last clause. Design §4, §0a.
 
 ## Phase 6 — Verification
 
 - [ ] T6.1 **Negative RLS pass.** As a co-approver on event A: can read
-      and decide A's photos of every status; cannot see event B's
-      photos or rows; cannot read A's approver link token; cannot
+      and decide A's photos of every status; **cannot delete any of
+      them, nor any object in A's storage folder**; cannot see event
+      B's photos or rows; cannot read A's approver link token; cannot
       update A's event row; cannot delete A. As an anonymous visitor
       who never claimed: unchanged from today. Record each result.
 - [ ] T6.2 **Rotation.** Two places taken; rotate; confirm both
@@ -272,10 +301,13 @@ after it (design §4).
 - [ ] T7.1 Record the cleanup query for anonymous users holding no
       membership, to be run after the course rather than on a schedule.
       Design §1e(3).
-- [ ] T7.2 Feed two lines into Feature 008's run book (T6.4): set
-      places to **staff count + 2** before the course (design §9), and
-      "if a reviewer loses their place, send them the link again — if
-      places are full, raise the number; do not rotate."
+- [ ] T7.2 Feed three lines into Feature 008's run book (T6.4): set
+      places to **staff count + 2** before the course (design §9); "if
+      a reviewer loses their place, send them the link again — if
+      places are full, raise the number; do not rotate"; and "**only
+      the owner can delete photographs or stop uploads** — if the event
+      fills up, raising the limit and clearing junk are both owner
+      actions" (design §0a).
 - [ ] T7.3 After the course, record in `CONSTITUTION.md`'s open
       decisions whether the leaked-link risk and the no-attribution
       decision survived contact with a real event, and re-examine both
@@ -302,4 +334,7 @@ Design §14 holds the full table with reasons.
 - [x] `specs/007-upload-abuse-protection/requirements.md` — US-22 and
       US-23 name the owner explicitly.
 - [x] `specs/008-event-readiness-testing/` — T-0 closed (E =
-      2027-02-05), T4.3 handed over to T6.3 above, §12b/T6.1 re-scoped.
+      2027-02-05), T4.3 handed over to T6.3 above, §12b/T6.1
+      re-scoped, and §3 / §8c / T6.4 / T7.2 corrected for deletion
+      being owner-only (no extra hands for the retention step; the
+      pre-downgrade deletion is the owner's alone).

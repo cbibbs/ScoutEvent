@@ -13,40 +13,67 @@ feature — see §13).
 
 ## 0. The powers a co-approver gets, and why that set (US-34)
 
-**Decided: photographs only.** Approve, reject, restore, add to and
-remove from the slideshow, delete. Nothing else.
+**Decided: moderation decisions only.** Approve, reject, restore, add
+to and remove from the slideshow. **Not delete**, and nothing else.
 
 | Rejected | Why not |
 |---|---|
 | Photographs **plus** "Stop uploads" | The emergency brake stays with the owner. Stop is the one control that ends guest participation for everybody in the room (Feature 007 US-23), and the people being handed a link are being handed a *review* job at a staff meeting, not custody of the event |
 | Everything except deleting the event | Puts the photograph limit, the upload window and the moderation toggle in a stranger's hands if the link is forwarded. Turning moderation off also removes the join QR (Feature 007 US-21) and changes what reaches the screen unreviewed — a safety change under `CONSTITUTION.md` principle 1, which is not something a link-holder should be able to make |
 | Fully equal to the owner | Same, plus the event itself becomes deletable by anyone holding the link |
+| **Keeping delete in the set** (the first version of this decision) | See below — it is the only irreversible action in the app, and the bulk-cleanup benefit does not pay for it |
+| Approver marks for deletion, owner confirms | Creates a second queue for the owner to work through, which is the opposite of what adding reviewers is for. If the owner has time to confirm 200 deletions they have time to make them |
 
-**One asymmetry inside the chosen set, flagged rather than silently
-built.** Delete is in the co-approver's powers and Stop uploads is
-not — but delete is the only **irreversible** action in the whole app
-(it removes the row *and* the stored image), while Stop is reversible
-in one click. A forwarded link reaching someone hostile therefore buys
-them the power to destroy the event's photographs permanently, which is
-a larger and less recoverable loss than anything the owner-only brake
-prevents. The counter-argument, which is why the decision stands as
-given: deleting is how an organizer clears junk, it is how capacity is
-freed when an event hits its photo limit (Feature 007 §2), and
-withholding it would make a co-approver unable to finish the job they
-were admitted to do — rejecting leaves the bytes in a bucket shared
-with every other event. The decision is the organizer's and is
-implemented as decided; the asymmetry is recorded here so that if it is
-revisited (alongside the leaked-link item in `CONSTITUTION.md`), nobody
-has to rediscover the argument.
+### 0a. Why delete came out
 
-**The accepted cost, stated rather than implied:** if the owner is
-off-site and uploads must stop, nobody else can stop them. The
-mitigations that exist are not substitutes — a co-approver can reject
-everything arriving (which keeps it off the screen but not out of
-storage), and can call the owner. US-34 requires the upload state to be
-*visible* to co-approvers precisely so the second of those is possible.
-Feature 007's Stop remains owner-only and its spec is amended only to
-say so explicitly (§14).
+The first version of this set included delete, and the asymmetry was
+flagged at review rather than built silently. The argument that carried
+it:
+
+**Delete is the only irreversible action in the system** — it removes
+the `photos` row *and* the stored object, with nothing to undo it —
+while Stop uploads, deliberately withheld as the emergency brake, is
+reversible in one click. The original set therefore let a forwarded
+link buy a stranger **permanent destruction** of a course's
+photographs, but not a reversible pause. That is the wrong way round,
+and no reading of "the link alone is the credential" survives it.
+
+What it costs, honestly:
+
+- **Clearing junk is slower, and it is the owner's job.** Rejecting a
+  photograph keeps it off the screen but does not free the bytes
+  (Feature 007 §2 counts rows of every status against `photo_limit`,
+  for exactly that reason). So a co-approver can stop bad photographs
+  reaching the screen — which is the safety property — and cannot
+  recover the capacity they occupy.
+- **Rejected photographs accumulate until the owner clears them.**
+  Feature 008 §3 already sizes a 1500-photograph course at ~1800
+  objects assuming 20% rejection, within 1 GB with under 180 MB of
+  headroom. That arithmetic is **unchanged** — it already assumed
+  rejection frees nothing — but the *operational* assumption behind it
+  changes: there are no extra hands for the clearing step. Feature 008
+  §3, §8c, T6.4 and T7.2 are amended to say so (§14).
+- **If an event hits its photo limit mid-course**, the two remedies
+  (raise the limit, delete junk) are both owner-only. That is a real
+  availability cost and it is the same one US-34 already accepts for
+  Stop: it needs the owner, and the run book should say to raise
+  `photo_limit` to 1800 *before* the course (Feature 008 §3) so the
+  situation does not arise.
+
+What it buys is worth more: a leaked link now grants nothing that
+cannot be undone, which is the single strongest line in the accepted
+risk this feature carries (requirements.md, Accepted risks;
+`CONSTITUTION.md` row 8).
+
+**The accepted cost of the whole set, stated rather than implied:** if
+the owner is off-site and uploads must stop, nobody else can stop them,
+and nobody else can free storage. The mitigations are not substitutes —
+a co-approver can reject everything arriving (which keeps it off the
+screen but not out of the bucket) and can call the owner. US-34
+requires the upload state and the photograph count to be *visible* to
+co-approvers precisely so the second of those is possible. Feature
+007's Stop remains owner-only and its spec is amended only to say so
+explicitly (§14).
 
 ## 1. Access: why a bearer link cannot work in the current model
 
@@ -324,6 +351,13 @@ begin
     raise exception 'no session to attach this place to';
   end if;
 
+  -- A place may only be held by an anonymous session (§5a guard 2).
+  -- This is what makes "an approver sees only shared events" a total
+  -- rule rather than a filter over an awkward combined state.
+  if coalesce((auth.jwt() ->> 'is_anonymous')::boolean, false) = false then
+    raise exception 'places are for visitors without an account';
+  end if;
+
   -- The row lock is the cap. Counting without it lets two simultaneous
   -- claims both read "3 of 4" and both insert (US-38).
   select * into v_link from public.event_approver_links
@@ -442,10 +476,15 @@ Route: **`/approve/[token]`**, outside `(site)` chrome and outside the
    and infuriating. An explicit action also means Next's prefetching
    cannot claim.
 3. On press, in the browser: if there is no session, call anonymous
-   sign-in; then call `claim_approver_place(token)`. If a session
-   already exists — including a signed-in owner, see §5 — it is used as
-   it is. **Never sign out an existing session to claim**: the person
-   at the staff meeting may be the owner of a different event.
+   sign-in, then `claim_approver_place(token)`. If an **anonymous**
+   session already exists, reuse it (that is what makes re-opening the
+   link idempotent). If an **account** session exists, stop before
+   claiming and render §5b's explanation. **Never sign out an existing
+   session to claim** — the person at the staff meeting may be the
+   owner of a different event, and taking their dashboard away at a
+   campsite is the failure US-33 names. The refusal is also enforced
+   server-side in `claim_approver_place`, so the client check is the
+   explanation, not the control.
 4. On success, `router.replace()` to `/dashboard/<slug>`. `replace`,
    not `push`, so the token is not left in history (US-33), and the
    page sets `<meta name="referrer" content="no-referrer">` and
@@ -462,7 +501,10 @@ Route: **`/approve/[token]`**, outside `(site)` chrome and outside the
      campsite. See §12;
    - rate-limited (HTTP 429 from the auth endpoint, §1e(4)) — says to
      wait a minute and press again, and is *retryable*, unlike the
-     other three.
+     other three;
+   - **signed in to an account** — §5b's two messages (owner of this
+     event / signed in as someone else), neither of which is a failure
+     of the link and neither of which may sign anybody out.
 
 **Why the token is a path segment and not a fragment.** A fragment
 (`/approve#<token>`) never reaches a server at all, which is
@@ -491,40 +533,32 @@ hand.
 | 1-2 | `20260913000000_init.sql:54,55` | `events` ALL — settings, Stop, delete | **Unchanged (owner-only)** + add the `is_anonymous` guard to `with check` (§1e) |
 | 3 | `20260913000000_init.sql:64` | `photos` SELECT | Historical — superseded by #8 |
 | 4-5 | `20260913000000_init.sql:79,85` | `photos` UPDATE using / with check | → `public.can_moderate_event(photos.event_id)` |
-| 6 | `20260913000000_init.sql:96` | `photos` DELETE | → `can_moderate_event` |
+| 6 | `20260913000000_init.sql:96` | `photos` DELETE | **Unchanged (owner-only)** — deletion is not a co-approver power (§0a). `can_moderate_event` deliberately does not gate it |
 | 7 | `20260913000000_init.sql:202` | `storage.objects` DELETE | Historical — superseded by #9 |
 | 8 | `20260914000000_slideshow_curation.sql:19` | `photos` SELECT (live) | → `(status='approved' and in_slideshow) or can_moderate_event(photos.event_id)` |
-| 9 | `20260921000000_upload_abuse_protection.sql:171` | `storage.objects` DELETE (live) | → folder-matched event, then `can_moderate_event(e.id)` |
-| 10 | `src/app/(site)/dashboard/page.tsx:14` | Which events are listed | Two labelled queries (§5) |
+| 9 | `20260921000000_upload_abuse_protection.sql:171` | `storage.objects` DELETE (live) | **Unchanged (owner-only)**, for the same reason as #6. Feature 007 §3 widened this to cover orphans; it stays owner-scoped |
+| 10 | `src/app/(site)/dashboard/page.tsx:14` | Which events are listed | Owned events for an account session; **shared events only** for an approver session (§5) |
 | 11 | `src/app/(site)/dashboard/[slug]/page.tsx:34` | Manage-page guard | owner **or** approver; owner-only controls still owner-gated |
 | 12 | `src/app/(site)/dashboard/[slug]/review/page.tsx:25` | Review-page guard | owner **or** approver |
 
-The migration recreates #4-#6, #8 and #9 by name (`drop policy if
-exists` then `create policy`, the pattern the existing migrations use),
-so after it the live definition of each lives in this feature's
-migration and the older files are history. Nothing is narrowed: every
-predicate becomes "the old one **or** a membership row", so an owner's
-access is bit-for-bit what it was. That property is what makes
-migrate-first safe (§12).
+**So only three of the nine SQL sites actually change**: the live
+`photos` SELECT (#8) and the two halves of `photos` UPDATE (#4, #5).
+The migration recreates those by name (`drop policy if exists` then
+`create policy`, the pattern the existing migrations use), so after it
+the live definition of each lives in this feature's migration and the
+older files are history. Nothing is narrowed: each becomes "the old one
+**or** a membership row", so an owner's access is bit-for-bit what it
+was. That property is what makes migrate-first safe (§12).
 
-The storage one keeps the text comparison rather than casting:
-
-```sql
-create policy "moderators delete their event photo files"
-  on storage.objects for delete to authenticated
-  using (
-    bucket_id = 'photos'
-    and exists (
-      select 1 from public.events e
-      where e.id::text = (storage.foldername(storage.objects.name))[1]
-        and public.can_moderate_event(e.id)
-    )
-  );
-```
-
-Casting the folder name to `uuid` would raise on any object whose first
-path segment is not a UUID, which is a policy that errors instead of
-denying. The existing policy avoided that and so does this one.
+**The two DELETE policies are not touched at all**, which is the
+cleanest possible expression of §0a: a co-approver cannot delete a
+photograph row, and cannot delete its object either, because neither
+policy knows what a membership is. Nothing in the client needs to be
+trusted for that to hold. It also means the awkward bit of the storage
+policy — matching `e.id::text` against `(storage.foldername(name))[1]`
+rather than casting the folder name to `uuid`, since a cast would
+*error* on any non-UUID path instead of denying — stays exactly as
+Feature 007 §3 left it, with no new predicate threaded through it.
 
 **`events` stays owner-only, and that is the whole of §0 expressed in
 SQL.** A co-approver has no UPDATE path to `events`, so settings, the
@@ -534,22 +568,86 @@ them by construction — not by hiding buttons. `submit_photo()` and
 
 ## 5. What each role sees (US-34, US-35)
 
-**Dashboard (`/dashboard`).** Two queries, two labelled sections, each
-omitted when empty:
+**Dashboard (`/dashboard`).** One list, chosen by what kind of session
+is asking:
 
-- *Your events* — `events` where `organizer_id = auth.uid()`
-  (unchanged).
-- *Shared with you* — `events` joined to `event_approvers` on the
-  caller's own membership rows.
+- an **account session** (signed in by email) lists the events it owns
+  — `organizer_id = auth.uid()`, exactly today's query, unchanged;
+- an **approver session** (anonymous) lists the events it holds places
+  on — `events` joined to its own `event_approvers` rows — and nothing
+  else.
 
-A pure co-approver therefore sees only "Shared with you", which is
-US-35. The organizer rejected *an undifferentiated combined list* and
-*a combined owned+shared list that hides which is which*; two labelled
-lists honours that while still handling the case the interview did not
-cover — a person who owns their own event and also helps on someone
-else's, which is exactly what happens when two unit leaders each run a
-course. **This is an interpretation, not a decision taken in the
-interview**, and is flagged as such in the handover.
+A co-approver therefore sees only the events shared with them, which is
+US-35 read strictly. An earlier draft proposed two labelled sections to
+cover a person who both owns events and holds places; that was rejected
+in favour of the strict reading, and the right response to the rejection
+is not to defend against the combined state but to make it unreachable.
+
+### 5a. Why the combined state cannot arise
+
+Two guards, each of which is independently sufficient, and both of
+which are in the same migration:
+
+1. **An approver session can never own an event.** Places are held only
+   by anonymous sessions, and the `is_anonymous` guard on `events`
+   (§1e(1)) refuses an insert naming an anonymous user as organizer. So
+   "approver session with events of its own" is not a state the
+   database can hold.
+2. **An account session can never hold a place.**
+   `claim_approver_place` refuses a caller whose session is not
+   anonymous (§2a). So "account session with places" is not a state the
+   database can hold either.
+
+The dashboard branch above is therefore total, not a filter over an
+awkward case: **exactly one of the two lists is ever non-empty for a
+given session**, and the code can read the session's own
+`is_anonymous` to decide which query to run without consulting either
+table. That is worth stating because the alternative implementation —
+run both queries and merge — would reintroduce the rejected combined
+list the moment either guard was weakened.
+
+### 5b. What happens to an owner who opens their own approver link
+
+This is the failure the strict rule could have caused and does not.
+Signing the owner out to claim anonymously would take away their own
+dashboard, on their own phone, at a campsite — unacceptable, and
+specifically forbidden by US-33. So:
+
+- **Nothing is signed out, and no place is taken.** The claim page
+  detects an account session and refuses before touching anything.
+- If that account **owns the event**, the page says so and offers the
+  way through to managing it: *"This is your event — you don't need a
+  reviewer place."* Their session is untouched.
+- If it does not, the page explains plainly: *"You're signed in as
+  <email>. Reviewer places are for people without an account. To help
+  review this event, open this link in a private window — or sign out
+  first."* An explicit explanation rather than silence, because the
+  surprising part ("my account can't do this") needs a reason attached
+  or it reads as a bug.
+
+What a real account holder therefore **loses** is the ability to be a
+co-approver on someone else's event without using a second browser
+profile or private window. That is a genuine limitation and it is the
+price of US-35's strict reading; the workaround costs one long-press on
+a phone and is named on the page rather than left to be discovered. It
+is also not a regression — nobody can co-approve anything today.
+
+**One trap this creates, for the implementer and the run book.** The
+reverse move is the dangerous one: a co-approver who signs in with an
+email address *in the same browser* replaces their anonymous session
+with an account session and silently loses their place (the membership
+row still points at the anonymous user, which nothing is signed in as
+any more). They cannot re-claim, because of guard (2); they must sign
+out, re-open the link, and take a **fresh** place, while the abandoned
+one stays taken until the link is withdrawn. Mitigations:
+
+- the site header (`src/components/Header.tsx`) must not offer
+  "Organizer sign in" to an approver session, and `SignOutButton`
+  should read as what it is for that session — leaving review, which
+  loses the place;
+- the run book gets the line already in T7.2, plus: *if a reviewer
+  loses access, re-send the link; if places are full, raise the number
+  rather than rotating.*
 
 **Manage page (`/dashboard/[slug]`).** The guard becomes "owner or
 holds a place"; anything else still `notFound()` — the same response as
@@ -557,7 +655,9 @@ a non-existent event, per US-35. Rendering, by role:
 
 | Element | Owner | Co-approver |
 |---|---|---|
-| Needs Review / Slideshow / Library grids, all actions | yes | yes |
+| Needs Review / Slideshow / Library grids | yes | yes |
+| Approve, reject, restore, add/remove from slideshow (single and bulk) | yes | yes |
+| Delete photo, bulk delete, delete selected | yes | **omitted** — and refused by RLS, §4 (§0a) |
 | "Review one at a time" | yes | yes |
 | Upload state + "N of LIMIT photos" | yes, with Stop/Resume | **read-only** (US-34) |
 | Event settings form | yes | hidden |
@@ -567,9 +667,12 @@ a non-existent event, per US-35. Rendering, by role:
 
 Hiding is cosmetic. US-34's last clause is the real requirement and it
 is already satisfied by §4: a co-approver who reconstructs the request
-by hand gets a refusal from Postgres. The UI must not *rely* on the
+by hand gets a refusal from Postgres — including for delete, where the
+policy was simply left owner-only. The UI must not *rely* on the
 refusal being invisible — in particular, do not render a disabled Stop
-button that silently does nothing; omit it.
+or Delete button that silently does nothing; omit them, and omit
+"Delete selected" from the bulk toolbar rather than letting a selection
+produce a refusal for every row in it.
 
 ## 6. Collisions: first decision wins, and the second reviewer is told
 (US-36)
@@ -614,9 +717,11 @@ const { data } = await supabase
   would not reach the screen (the public policy requires both), but it
   would be an inconsistent row produced by a race, and the fix costs
   one `.eq()`.
-- **Delete carries no precondition.** Deleting something already
-  deleted affects zero rows and needs no explanation; deleting
-  something someone else just approved is a decision, not a collision.
+- **Delete carries no precondition**, and after §0a it is an
+  owner-only action anyway, so the two-reviewer collision question does
+  not arise for it. Deleting something already deleted affects zero
+  rows and needs no explanation; deleting something a co-approver just
+  approved is the owner's decision, not a collision.
 - **Bulk actions** add the same `.eq("status", expected)` alongside
   `.in("id", ids)` and use `.select("id")` to learn how many rows were
   actually written. The UI reports "approved 11; 2 had already been
@@ -979,7 +1084,7 @@ behaviour must amend that earlier spec. All of the following are
 | `CONSTITUTION.md` open decisions | New bounded row: the leaked approver link, accepted for adult-staff events, revisit before youth-present events (requirements.md, Accepted risks; §10) |
 | `specs/PROJECT.md` — Stack | Auth row: anonymous sign-in exists, for co-approvers only, with the `is_anonymous` guard (§1e) |
 | `specs/PROJECT.md` — Where the data lives | `event_approver_links` and `event_approvers` added |
-| `specs/PROJECT.md` — Access control rule 2 | "Organizers see and change only their own events' photos" → membership-based, one predicate, `can_moderate_event` |
+| `specs/PROJECT.md` — Access control rule 2 | "Organizers see and change only their own events' photos" → membership-based for reading and moderating, one predicate (`can_moderate_event`); **deletion stays owner-only** (§0a) |
 | `specs/001` US-6 | "an organizer sees only their own events and photos" is no longer the whole rule |
 | `specs/001` out-of-scope ("Multiple organizers per event") | Superseded |
 | `specs/003` US-10 / design §1 | "in principle another organizer" is now real; "no RLS changes needed — the organizer's existing SELECT policy" is now the membership policy |
@@ -990,6 +1095,7 @@ behaviour must amend that earlier spec. All of the following are
 | `specs/008` T-0 | Closed: E = 2027-02-05 confirmed |
 | `specs/008` §5c / T4.3 | The four-step concurrency test is absorbed as a task in this feature's `tasks.md` (T6.3) |
 | `specs/008` §12b / T6.1 | Re-scoped: co-approvers do not use the sign-in email, so the test is the owner alone (§13) |
+| `specs/008` §3, §8c, T6.4, T7.2 | Deletion and retention cleanup are **owner-only work**. The storage arithmetic is unchanged (it already assumed rejection frees nothing), but the assumption that more reviewers means more hands for the deletion step is removed, and the pre-downgrade deletion in T7.3 is the owner's alone (§0a) |
 
 Deliberately **not** amended: Feature 007 US-21 and Feature 005 US-17
 (the join QR gated on moderation). Feature 008 US-29 says more

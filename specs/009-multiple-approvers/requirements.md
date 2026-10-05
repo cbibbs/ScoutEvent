@@ -81,6 +81,13 @@ immediately, without an account, an email, or a sign-in step.
 - WHEN a person who already holds a place on an event opens that
   event's current approver link again, THE SYSTEM SHALL return them to
   reviewing without consuming a second place.
+- WHEN a person who is signed in to an account of their own opens an
+  approver link, THE SYSTEM SHALL NOT attach a place to that account
+  and SHALL NOT sign them out. It SHALL explain why, name what to do
+  instead, and — where the account owns the event in question — offer
+  the way to manage it. Places are for people without accounts; an
+  account holder silently losing sight of their own events is the
+  failure this criterion exists to prevent.
 - WHEN a person opens an approver link that is not recognized, THE
   SYSTEM SHALL tell them the link is no longer valid and to ask the
   organizer for a current one, and SHALL NOT distinguish a withdrawn
@@ -104,8 +111,12 @@ link cannot cost me the event.
 
 - THE SYSTEM SHALL let a co-approver, on an event they hold a place on:
   approve a pending photograph; reject one; restore a rejected one; add
-  an approved photograph to the slideshow; remove one from the
-  slideshow; and delete a photograph and its stored image.
+  an approved photograph to the slideshow; and remove one from the
+  slideshow.
+- THE SYSTEM SHALL NOT let a co-approver delete a photograph or its
+  stored image. Deletion is the only irreversible action in the system
+  and remains the owner's alone — see `design.md` §0 for the reasoning
+  and what it costs.
 - THE SYSTEM SHALL NOT let a co-approver change any event setting,
   including the event's name, dates, upload schedule, photograph limit,
   slideshow interval, or whether moderation is on.
@@ -120,9 +131,15 @@ link cannot cost me the event.
   and how full it is, as information they cannot change, so they can
   tell the owner when something needs the owner.
 
-  *Accepted consequence, recorded deliberately:* if the owner is
-  off-site and uploads must be stopped, nobody else can stop them. The
-  emergency brake stays with the owner. See `design.md` §0.
+  *Two accepted consequences, recorded deliberately:*
+  (1) if the owner is off-site and uploads must be stopped, nobody else
+  can stop them — the emergency brake stays with the owner;
+  (2) rejected and unwanted photographs accumulate until the owner
+  clears them, because rejecting a photograph hides it but does not
+  free the space it occupies. Co-approvers cannot help with that, and
+  it is the owner's job before and after the event. See `design.md`
+  §0, and Feature 008 §3 for what it means for a 1500-photograph
+  course.
 
 ### US-35: A co-approver sees the event they were given, and nothing else
 
@@ -130,12 +147,13 @@ As an owner, I want admitting someone to one event to tell them nothing
 about my other events.
 
 - WHEN a co-approver opens the organizer area, THE SYSTEM SHALL list
-  the events they hold a place on and SHALL NOT disclose the existence,
-  name, or count of any other event belonging to the owner or to anyone
-  else.
-- WHERE a person both owns events and holds places on others', THE
-  SYSTEM SHALL present the two groups as separately labelled lists, so
-  that it is never ambiguous which events are theirs.
+  **only** the events they hold a place on, and SHALL NOT disclose the
+  existence, name, or count of any other event belonging to the owner
+  or to anyone else.
+- THE SYSTEM SHALL NOT place a reviewing session and an account's own
+  events in the same list, and SHALL arrange matters so that a session
+  cannot hold both at once — see `design.md` §5, which shows the
+  combination is unreachable rather than merely avoided.
 - WHEN a co-approver opens an event they do not hold a place on, THE
   SYSTEM SHALL respond exactly as it does for an event that does not
   exist.
@@ -248,8 +266,18 @@ rather than to defeat a determined insider, and the two alternatives
 cost more than they buy — the owner approving each admission fails when
 the owner is unreachable at a campsite, which is exactly when help is
 needed, and a short-lived link fails the staff member who joins on day
-two. What bounds it is the number of places and the owner's ability to
-withdraw the link.
+two.
+
+**What bounds it, and the part that changed:** the number of places,
+the owner's ability to withdraw the link in one action, and — now that
+deletion is owner-only — the fact that **a leaked link grants nothing
+irreversible**. The worst a stranger holding one can do is approve
+something that should not have been approved, or reject things that
+should not have been rejected; both are visible on the screens the
+owner already watches, and both are undoable. Nothing they can do
+destroys a photograph. That is a materially different risk from the
+one first weighed, and it is the strongest single argument for the
+link-only design surviving contact with a real course.
 
 **Boundary, not a closed decision.** This is accepted for adult-staff
 events. It should be revisited before the app is used for a troop event
@@ -261,8 +289,10 @@ bounded, revisit-on-condition item rather than as settled.
 
 **Losing a place costs a place.** Admission is held by the browser that
 took it. A co-approver who clears their browser data, switches device,
-or uses a private window is a new person as far as the system is
-concerned and must take another place. The remedy is the owner raising
+uses a private window, or **signs in to an account of their own in that
+browser** is a new person as far as the system is concerned and must
+take another place; the place they left behind stays taken until the
+link is withdrawn. The remedy is the owner raising
 the number of places, which US-38 requires to be possible at any time.
 
 **Nothing here changes who can read a photograph's bytes.** Display
